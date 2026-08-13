@@ -23,7 +23,7 @@ Your job:
 1. Call specdrive get_guidance to see how the workflow operates.
 2. Create the project with specdrive create_project (short name + one-liner).
 3. Interview me about my idea: who it is for, what it must do, what "done" looks like, what exists today. Ask one question at a time. Keep it friendly and short.
-4. After each answer, immediately write what you learned into the spec board with specdrive add_spec (pick the right category: vision, audience, features, design, tech, data, decisions). Small, focused specs — one topic per spec — so the board fills up live while we talk.
+4. After each answer, immediately write what you learned into the spec board with specdrive add_spec (pick the right category: vision, audience, features, design, tech, data, decisions). Small, focused specs — one topic per spec — so the board fills up live while we talk. Phrase feature specs as testable behavior ("When a neighbor taps Reserve, the count goes down") rather than vague wishes.
 5. When the picture feels complete, tell me it is time for the "Challenge" step and call specdrive set_phase to "challenge".
 
 Start now by asking me what I want to build.`
@@ -48,9 +48,9 @@ export const PHASE_PROMPTS: PhasePrompt[] = [
 You are a ruthless but constructive spec reviewer. You did NOT write these specs; your job is to find what is wrong or missing before any code exists.
 
 1. Call specdrive get_project and read every spec carefully.
-2. Hunt for: contradictions, vague statements that cannot be built ("nice UX"), missing essentials (accounts? payments? data storage? offline? privacy?), scope that is too big for a first version, and unstated assumptions.
-3. For each problem: fix the spec with specdrive update_spec (set status "challenged" and fill challengeNote), or add the missing spec with specdrive add_spec.
-4. Ask me (the non-technical owner) simple questions one at a time when only I can decide. Update the board after each answer.
+2. Scan systematically across: functional scope, data, user experience, edge cases, error handling, accounts/privacy, success criteria, out-of-scope. Rate each area Clear / Partial / Missing.
+3. Hunt for: contradictions, vague statements that cannot be built ("nice UX"), missing essentials, scope too big for a first version, unstated assumptions. Rewrite vague feature specs as testable statements ("When X happens, the product does Y").
+4. For each problem: fix the spec with specdrive update_spec (set status "challenged" and fill challengeNote), or add the missing spec with specdrive add_spec. Then ask me (the non-technical owner) at most 5 questions — highest-impact first, one at a time, each answerable in a few words or by choosing an option. Update the board after each answer.
 5. Propose a first version cut: mark what is OUT of v1 by adding a "decisions" spec listing what we postpone.
 6. When the board is solid, summarize what changed in plain words, then call specdrive set_phase to "research".`
   },
@@ -87,7 +87,8 @@ You are a senior engineer doing a pre-mortem. Assume this project FAILED six mon
 3. For each difficulty 4-5 item, add a "risks" spec: what could go wrong, and the mitigation or simpler fallback plan.
 4. If a hard part deserves its own deep-dive investigation, say so explicitly in that risk spec — the SpecDrive app will suggest I launch a dedicated agent session on it.
 5. Explain to me in plain words what the 2-3 hardest things are and what you recommend. Ask me to confirm the trade-offs, one at a time.
-6. Then call specdrive set_phase to "plan".`
+6. Give a final readiness verdict: PASS (ready to plan), CONCERNS (list them — we proceed with eyes open), or FAIL (something must be resolved first; tell me exactly what). Record the verdict as a "decisions" spec.
+7. On PASS or accepted CONCERNS, call specdrive set_phase to "plan".`
   },
   {
     phase: 'plan',

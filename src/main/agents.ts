@@ -63,6 +63,7 @@ function addSpecdriveJsonEntry(file: string, serverPath: string): void {
   })
 }
 
+const ANTIGRAVITY_MCP = path.join(HOME, '.gemini', 'antigravity', 'mcp_config.json')
 const CURSOR_MCP = path.join(HOME, '.cursor', 'mcp.json')
 const CLAUDE_DESKTOP_CFG = path.join(HOME, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')
 const WINDSURF_MCP = path.join(HOME, '.codeium', 'windsurf', 'mcp_config.json')
@@ -123,10 +124,9 @@ export async function detectAgents(serverPath: string): Promise<DetectedAgent[]>
     {
       id: 'antigravity',
       name: 'Antigravity',
-      installed: exists('/Applications/Antigravity.app'),
-      connected: false,
-      install: 'manual',
-      manualCommand: `Add an MCP server named "specdrive" in Antigravity settings with command: node "${serverPath}"`
+      installed: exists('/Applications/Antigravity.app') || exists(path.dirname(ANTIGRAVITY_MCP)),
+      connected: hasSpecdriveEntry(ANTIGRAVITY_MCP),
+      install: 'auto'
     },
     {
       id: 'gemini-cli',
@@ -177,6 +177,7 @@ export async function connectAgent(id: AgentId, serverPath: string): Promise<voi
       return
     }
     case 'antigravity':
-      throw new Error('Antigravity needs a manual setup — use the copy button.')
+      addSpecdriveJsonEntry(ANTIGRAVITY_MCP, serverPath)
+      return
   }
 }

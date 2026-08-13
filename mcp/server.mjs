@@ -35,7 +35,7 @@ const PHASE_GUIDE = {
   research:
     'RESEARCH: search the web for similar products, reusable building blocks, pitfalls. One finding per add_spec (category "research"), with links. End with a "What we learned" spec, then set_phase to "risks".',
   risks:
-    'RISKS: pre-mortem. Rate spec difficulty 1-5 via update_spec. For difficulty 4-5, add a "risks" spec with mitigation/fallback. Flag topics deserving a dedicated deep-dive session. Then set_phase to "plan".',
+    'RISKS: pre-mortem. Rate spec difficulty 1-5 via update_spec. For difficulty 4-5, add a "risks" spec with mitigation/fallback. Flag topics deserving a dedicated deep-dive session. End with a readiness verdict (PASS / CONCERNS / FAIL) recorded as a "decisions" spec; only advance on PASS or owner-accepted CONCERNS. Then set_phase to "plan".',
   plan:
     'PLAN: choose architecture (record as "tech" specs), sketch 3-6 core screens with add_wireframe (grayscale boxes HTML), create small ordered tasks with add_task (spikes for hard parts first, each with a clear "done" meaning). Then set_phase to "build".',
   build:
