@@ -1,0 +1,16 @@
+appId: app.specdrive
+productName: SpecDrive
+directories:
+  output: dist
+files:
+  - out/**/*
+  - package.json
+  - '!out/mcp/**'
+extraResources:
+  - from: out/mcp
+    to: mcp
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+  icon: resources/icon.png

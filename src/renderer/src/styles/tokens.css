@@ -1,0 +1,69 @@
+/* Portal twilight-editorial design tokens — see .impeccable.md
+   Type: Perfectly Nineties (display serif) + Portal Sans (the user-mandated
+   Portal reference UI face, bundled woff2) with SF Pro fallback. */
+@font-face {
+  font-family: 'Perfectly Nineties';
+  src: url('/fonts/perfectly-nineties.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Portal Sans';
+  src: url('/fonts/ui-sans-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Portal Sans';
+  src: url('/fonts/ui-sans-500.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Portal Sans';
+  src: url('/fonts/ui-sans-600.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+
+:root {
+  /* Colors */
+  --signal-blue: #007aff;
+  --ink: #0a0a0a;
+  --graphite: #3e3e3e;
+  --smoke: #636363;
+  --paper: #ffffff;
+  --ash: #f7f7f7;
+  --hairline: rgba(0, 0, 0, 0.08);
+  --dusk-gradient: linear-gradient(180deg, #4a7ff2 0%, #7b7ed8 30%, #c98ab5 65%, #e8a87c 100%);
+
+  /* Type */
+  --font-display: 'Perfectly Nineties', Georgia, serif;
+  --font-ui: 'Portal Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+
+  --text-micro: 10px;
+  --text-caption: 12px;
+  --text-body-sm: 14px;
+  --text-body: 16px;
+  --text-heading-sm: 18px;
+  --text-heading: 36px;
+  --text-display: 48px;
+
+  /* Radii */
+  --radius-card: 22px;
+  --radius-card-lg: 30px;
+  --radius-pill: 50px;
+  --radius-inner: 16px;
+
+  /* Elevation */
+  --glow-ring: 0 0 0 5px var(--ash);
+  --glow-ring-thin: 0 0 0 1px var(--ash);
+  --button-shadow:
+    inset 0 1px 0 0 #ffffff,
+    0 0 0 1px rgba(0, 0, 0, 0.15),
+    0 3px 2px 0 rgba(0, 0, 0, 0.06);
+
+  /* Layout */
+  --page-max: 1200px;
+  --reading-max: 720px;
+}
