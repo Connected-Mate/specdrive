@@ -1227,6 +1227,24 @@ a {
   fill: var(--signal-blue);
 }
 
+.flow-node-bg.entry {
+  stroke: var(--signal-blue);
+  stroke-width: 1.6;
+}
+
+.flow-start-badge {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  fill: #ffffff;
+  letter-spacing: 0.02em;
+}
+
+.flow-cond {
+  font-style: italic;
+  fill: var(--smoke);
+}
+
 .flow-hint {
   font-size: 11px;
   color: var(--smoke);

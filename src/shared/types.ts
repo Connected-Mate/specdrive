@@ -87,6 +87,8 @@ export interface FlowScreen {
   name: string
   /** One plain sentence: what the user does on this screen */
   purpose?: string
+  /** The one screen where the user's story starts */
+  entry?: boolean
 }
 
 export interface FlowLink {
@@ -94,6 +96,8 @@ export interface FlowLink {
   to: string
   /** What triggers the move, e.g. "taps Reserve" */
   label?: string
+  /** Alternative/branch path marker, e.g. "sold out" — drawn dashed */
+  condition?: string
 }
 
 /** The visual plan: screens of the product and how users move between them */

@@ -471,7 +471,8 @@ server.registerTool(
           z.object({
             id: z.string().describe('Short stable id, e.g. "home"'),
             name: z.string().max(40).describe('Screen name shown on the map, e.g. "Shop page"'),
-            purpose: z.string().max(120).optional().describe('One plain sentence: what the user does here')
+            purpose: z.string().max(120).optional().describe('One plain sentence: what the user does here'),
+            entry: z.boolean().optional().describe('True for the ONE screen where the user starts')
           })
         )
         .min(1)
@@ -481,7 +482,12 @@ server.registerTool(
           z.object({
             from: z.string(),
             to: z.string(),
-            label: z.string().max(40).optional().describe('What triggers the move, e.g. "taps Reserve"')
+            label: z.string().max(40).optional().describe('What triggers the move, e.g. "taps Reserve"'),
+            condition: z
+              .string()
+              .max(30)
+              .optional()
+              .describe('Only for alternative/branch paths, e.g. "sold out", "error" — drawn dashed')
           })
         )
         .max(24)
@@ -492,6 +498,7 @@ server.registerTool(
     const ids = new Set(screens.map((s) => s.id))
     const bad = links.find((l) => !ids.has(l.from) || !ids.has(l.to))
     if (bad) return fail(`Link ${bad.from} → ${bad.to} references an unknown screen id. Screen ids: ${[...ids].join(', ')}`)
+    if (screens.filter((s) => s.entry).length > 1) return fail('Only one screen can have entry: true.')
     writeJson(path.join(projectDir(id), 'flow.json'), { screens, links, updatedAt: now() })
     saveProject(id, readJson(path.join(projectDir(id), 'project.json')))
     logActivity(id, 'agent', 'set_flow', `Visual plan updated: ${screens.length} screens, ${links.length} links`)

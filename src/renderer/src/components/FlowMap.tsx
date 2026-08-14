@@ -17,6 +17,7 @@ interface Node {
   x: number
   y: number
   hasSketch: boolean
+  entry: boolean
 }
 
 function layout(
@@ -63,7 +64,8 @@ function layout(
         purpose: s.purpose,
         x: PAD + d * (NODE_W + COL_GAP),
         y: y0 + i * (NODE_H + ROW_GAP),
-        hasSketch: sketchScreens.has(s.name.toLowerCase())
+        hasSketch: sketchScreens.has(s.name.toLowerCase()),
+        entry: Boolean(s.entry)
       })
     })
   }
@@ -112,31 +114,42 @@ export function FlowMap({
           const c2x = forward ? x2 - dx : x2 + dx
           const mx = (x1 + x2) / 2
           const my = (y1 + y2) / 2 - 9
+          const alt = Boolean(l.condition)
           return (
-            <g key={i}>
+            <g key={i} opacity={alt ? 0.75 : 1}>
               <path
                 d={`M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`}
                 fill="none"
                 stroke="#c9c9c9"
                 strokeWidth="1.5"
+                strokeDasharray={alt ? '5 4' : undefined}
                 markerEnd="url(#arrow)"
               />
-              {l.label && (
-                <g>
-                  <rect
-                    x={mx - l.label.length * 2.9 - 7}
-                    y={my - 9}
-                    width={l.label.length * 5.8 + 14}
-                    height={17}
-                    rx={8.5}
-                    fill="#f7f7f7"
-                    stroke="rgba(0,0,0,0.07)"
-                  />
-                  <text x={mx} y={my + 3} textAnchor="middle" className="flow-label">
-                    {l.label}
-                  </text>
-                </g>
+              {alt && !l.label && (
+                <text x={mx} y={my + 3} textAnchor="middle" className="flow-label flow-cond">
+                  {l.condition}
+                </text>
               )}
+              {l.label &&
+                (() => {
+                  const txt = l.condition ? `${l.label} — ${l.condition}` : l.label
+                  return (
+                    <g>
+                      <rect
+                        x={mx - txt.length * 2.9 - 7}
+                        y={my - 9}
+                        width={txt.length * 5.8 + 14}
+                        height={17}
+                        rx={8.5}
+                        fill="#f7f7f7"
+                        stroke="rgba(0,0,0,0.07)"
+                      />
+                      <text x={mx} y={my + 3} textAnchor="middle" className="flow-label">
+                        {txt}
+                      </text>
+                    </g>
+                  )
+                })()}
             </g>
           )
         })}
@@ -151,7 +164,20 @@ export function FlowMap({
               style={{ '--i': i } as React.CSSProperties}
               onClick={() => n.hasSketch && onOpenScreen(n.name)}
             >
-              <rect width={NODE_W} height={NODE_H} rx={16} className="flow-node-bg" />
+              <rect
+                width={NODE_W}
+                height={NODE_H}
+                rx={16}
+                className={`flow-node-bg${n.entry ? ' entry' : ''}`}
+              />
+              {n.entry && (
+                <g transform={`translate(10, 10)`}>
+                  <rect width={40} height={17} rx={8.5} fill="#007aff" />
+                  <text x={20} y={12} textAnchor="middle" className="flow-start-badge">
+                    Start
+                  </text>
+                </g>
+              )}
               {thumb && (
                 <>
                   <clipPath id={`thumb-${n.id}`}>
