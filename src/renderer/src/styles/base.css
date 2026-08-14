@@ -2500,3 +2500,107 @@ a {
   margin: 0 4px;
   flex: none;
 }
+
+/* ============ Glitch badge — the live-session indicator ============ */
+
+.glitch-host {
+  display: inline-flex;
+  user-select: none;
+}
+
+.glitch-magnet {
+  position: relative;
+  display: inline-block;
+  will-change: transform;
+}
+
+.glitch-grid {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.glitch-cell {
+  grid-column-start: 1;
+  grid-row-start: 1;
+}
+
+.glitch-unit {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.glitch-text {
+  position: relative;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: pre;
+  color: #ffffff;
+}
+
+.invisible-anchor {
+  visibility: hidden;
+  padding: 0 12px;
+}
+
+/* The badge material: drifting green fill, top-lit gradient, inner highlight
+   and shade, occlusion ring instead of a border, two-part contact shadow. */
+.gw-badge {
+  position: absolute;
+  inset: -6px -12px;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 45%),
+    linear-gradient(120deg, #1ea45c, #17915f 40%, #1fae55 70%, #159464);
+  background-size: 100% 100%, 300% 300%;
+  animation: gw-fill-drift 11s ease-in-out infinite alternate;
+  box-shadow:
+    inset 0 1px 0 -0.5px rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 -0.5px rgba(0, 32, 15, 0.3),
+    inset 0 0 0 1px rgba(0, 40, 18, 0.09),
+    0 1px 2px rgba(6, 46, 24, 0.22),
+    0 4px 10px -4px rgba(6, 46, 24, 0.28);
+}
+
+@keyframes gw-fill-drift {
+  from {
+    background-position: 0 0, 0% 0%;
+  }
+  to {
+    background-position: 0 0, 100% 100%;
+  }
+}
+
+/* ============ Live session card (guide rail) ============ */
+
+.live-card {
+  background: var(--paper);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-ring);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  animation: pane-in 0.4s var(--ease-spring) both;
+}
+
+.live-card .live-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.live-card .live-meta {
+  font-size: 11.5px;
+  color: var(--smoke);
+  line-height: 1.5;
+}
+
+.live-card .live-meta strong {
+  color: var(--graphite);
+  font-weight: 500;
+}

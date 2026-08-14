@@ -232,6 +232,61 @@ function requireProject(ref) {
 
 const server = new McpServer({ name: 'specdrive', version: '0.1.0' })
 
+// ---------- live session presence ----------
+// Every tool call heartbeats a session file the app watches, so the owner SEES
+// which agent is talking to the board right now (client name/version, last
+// tool, project). Cleaned up on exit; the app ignores stale files.
+
+const SESSIONS_DIR = path.join(DATA_DIR, 'sessions')
+const SESSION_FILE = path.join(SESSIONS_DIR, `${process.pid}.json`)
+let sessionStartedAt = null
+
+function recordSession(tool, projectRef) {
+  try {
+    fs.mkdirSync(SESSIONS_DIR, { recursive: true })
+    if (!sessionStartedAt) sessionStartedAt = now()
+    let client = { name: 'AI agent', version: '' }
+    try {
+      const info = server.server.getClientVersion()
+      if (info?.name) client = { name: info.name, version: info.version ?? '' }
+    } catch {}
+    writeJson(SESSION_FILE, {
+      pid: process.pid,
+      client: client.name,
+      version: client.version,
+      lastTool: tool,
+      project: projectRef ?? null,
+      lastToolAt: now(),
+      startedAt: sessionStartedAt
+    })
+  } catch {
+    // presence is best-effort
+  }
+}
+
+function endSession() {
+  try {
+    fs.unlinkSync(SESSION_FILE)
+  } catch {}
+}
+process.on('exit', endSession)
+process.on('SIGINT', () => {
+  endSession()
+  process.exit(0)
+})
+process.on('SIGTERM', () => {
+  endSession()
+  process.exit(0)
+})
+
+// Wrap registerTool so every handler heartbeats without touching each one.
+const _registerTool = server.registerTool.bind(server)
+server.registerTool = (name, def, handler) =>
+  _registerTool(name, def, async (args) => {
+    recordSession(name, args && typeof args.project === 'string' ? args.project : undefined)
+    return handler(args)
+  })
+
 server.registerTool(
   'get_guidance',
   {

@@ -3,6 +3,8 @@ import type { AgentId, SpecDriveApi } from '../shared/types'
 
 const api: SpecDriveApi = {
   listProjects: () => ipcRenderer.invoke('projects:list'),
+  listSessions: () => ipcRenderer.invoke('sessions:list'),
+  getMcpInfo: () => ipcRenderer.invoke('mcp:info'),
   getProject: (id: string) => ipcRenderer.invoke('projects:get', id),
   deleteProject: (id: string) => ipcRenderer.invoke('projects:delete', id),
   detectAgents: () => ipcRenderer.invoke('agents:detect'),

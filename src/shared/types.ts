@@ -188,6 +188,17 @@ export interface ProjectBundle {
   activity: ActivityEntry[]
 }
 
+/** A live MCP session: an agent currently talking to the board. */
+export interface LiveSession {
+  pid: number
+  client: string
+  version: string
+  lastTool: string
+  project: string | null
+  lastToolAt: string
+  startedAt: string
+}
+
 // ---------- AI coding agents installed on the machine ----------
 
 export type AgentId =
@@ -215,6 +226,9 @@ export interface DetectedAgent {
 
 export interface SpecDriveApi {
   listProjects(): Promise<ProjectBundle[]>
+  listSessions(): Promise<LiveSession[]>
+  /** Paths the starter prompt needs so an agent can self-install the MCP */
+  getMcpInfo(): Promise<{ serverPath: string; nodeBin: string }>
   getProject(id: string): Promise<ProjectBundle | null>
   deleteProject(id: string): Promise<void>
   detectAgents(): Promise<DetectedAgent[]>

@@ -1,7 +1,9 @@
-import React, { useRef, useState } from 'react'
-import type { ProjectBundle } from '@shared/types'
+import React, { useEffect, useRef, useState } from 'react'
+import type { LiveSession, ProjectBundle } from '@shared/types'
 import { PHASES } from '@shared/types'
-import { DEEP_DIVE_PROMPT, PHASE_PROMPTS, START_PROMPT, fillPrompt } from '@shared/prompts'
+import { DEEP_DIVE_PROMPT, PHASE_PROMPTS, START_PROMPT, fillPrompt, type McpInfo } from '@shared/prompts'
+import { GlitchBadge } from './glitch/GlitchBadge'
+import { timeAgo } from '@/lib/useLive'
 import { CopyIcon, TickIcon } from './Icons'
 import { useToast } from './Toast'
 import { PHASE_COLOR } from '@/lib/phaseColors'
@@ -47,15 +49,86 @@ function CopyButton({ text, label }: { text: string; label: string }): React.JSX
   )
 }
 
+function useLiveSessions(): LiveSession[] {
+  const [sessions, setSessions] = useState<LiveSession[]>([])
+  useEffect(() => {
+    const refresh = (): void => {
+      window.specdrive.listSessions().then(setSessions).catch(() => {})
+    }
+    refresh()
+    const off = window.specdrive.onProjectsChanged(refresh)
+    const t = setInterval(refresh, 20000) // expire stale sessions even when quiet
+    return () => {
+      off()
+      clearInterval(t)
+    }
+  }, [])
+  return sessions
+}
+
+function useMcpInfo(): McpInfo | undefined {
+  const [info, setInfo] = useState<McpInfo>()
+  useEffect(() => {
+    window.specdrive.getMcpInfo().then(setInfo).catch(() => {})
+  }, [])
+  return info
+}
+
+const CLIENT_LABEL: Record<string, string> = {
+  'claude-code': 'Claude Code',
+  claude: 'Claude Code',
+  cursor: 'Cursor',
+  'cursor-vscode': 'Cursor',
+  windsurf: 'Windsurf',
+  'gemini-cli': 'Gemini',
+  codex: 'Codex'
+}
+
+function clientLabel(raw: string): string {
+  return CLIENT_LABEL[raw.toLowerCase()] ?? raw
+}
+
+/** "An agent is talking to the board right now" — the glitch badge design. */
+function LiveSessionCard({ sessions }: { sessions: LiveSession[] }): React.JSX.Element | null {
+  if (!sessions.length) return null
+  const s = sessions[0]
+  return (
+    <div className="live-card">
+      <div className="live-row">
+        <GlitchBadge word={clientLabel(s.client)} />
+        <span className="rail-mini-label" style={{ marginLeft: 'auto' }}>
+          Live
+        </span>
+      </div>
+      <p className="live-meta">
+        {s.project ? (
+          <>
+            Working on <strong>{s.project}</strong>
+          </>
+        ) : (
+          'Reading the board'
+        )}
+        {' · '}
+        <strong>{s.lastTool}</strong> {timeAgo(s.lastToolAt)}
+        {s.version ? ` · v${s.version}` : ''}
+        {sessions.length > 1 ? ` · +${sessions.length - 1} more session${sessions.length > 2 ? 's' : ''}` : ''}
+      </p>
+    </div>
+  )
+}
+
 /** Right rail: always-visible guidance — where you are, what to do next. */
 export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.JSX.Element {
   const toast = useToast()
+  const sessions = useLiveSessions()
+  const mcp = useMcpInfo()
 
   if (!bundle) {
     return (
       <aside className="rail">
         <div className="rail-drag" />
         <div className="rail-body">
+          <LiveSessionCard sessions={sessions} />
           <div className="next-step">
             <span className="rail-mini-label">Start here</span>
             <h2>Tell your idea</h2>
@@ -64,8 +137,8 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
               describe what you want to build — in your own words. Your project will appear here on
               its own.
             </p>
-            <CopyButton text={START_PROMPT} label="Copy the starter prompt" />
-            <div className="prompt-peek">{START_PROMPT}</div>
+            <CopyButton text={fillPrompt(START_PROMPT, '', undefined, mcp)} label="Copy the starter prompt" />
+            <div className="prompt-peek">{fillPrompt(START_PROMPT, '', undefined, mcp)}</div>
           </div>
         </div>
       </aside>
@@ -82,6 +155,14 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
     <aside className="rail" style={{ '--phase-color': phaseColor } as React.CSSProperties}>
       <div className="rail-drag" />
       <div className="rail-body">
+        <LiveSessionCard
+          sessions={sessions.filter(
+            (x) =>
+              !x.project ||
+              x.project === bundle.project.id ||
+              x.project.toLowerCase() === bundle.project.name.toLowerCase()
+          )}
+        />
         <div className="step-figure">
           <span className="mini" style={{ color: phaseColor }}>
             Step {Math.min(currentIdx + 1, 6)} of 6
@@ -124,8 +205,8 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
               Tip — open a brand-new chat for this step. A fresh pair of eyes gives better results.
             </p>
           )}
-          <CopyButton text={fillPrompt(phasePrompt.prompt, project.name)} label="Copy the prompt" />
-          <div className="prompt-peek">{fillPrompt(phasePrompt.prompt, project.name)}</div>
+          <CopyButton text={fillPrompt(phasePrompt.prompt, project.name, undefined, mcp)} label="Copy the prompt" />
+          <div className="prompt-peek">{fillPrompt(phasePrompt.prompt, project.name, undefined, mcp)}</div>
         </div>
 
         {deepDives.length > 0 && project.phase !== 'done' && (
@@ -141,7 +222,7 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
                   key={s.id}
                   className="deep-dive-btn"
                   onClick={() => {
-                    window.specdrive.copyToClipboard(fillPrompt(DEEP_DIVE_PROMPT, project.name, s.title))
+                    window.specdrive.copyToClipboard(fillPrompt(DEEP_DIVE_PROMPT, project.name, s.title, mcp))
                     toast('Deep-dive prompt copied')
                   }}
                 >

@@ -9,6 +9,7 @@ export const PROJECTS_DIR = path.join(DATA_DIR, 'projects')
 
 export function ensureDataDirs(): void {
   fs.mkdirSync(PROJECTS_DIR, { recursive: true })
+  fs.mkdirSync(path.join(DATA_DIR, 'sessions'), { recursive: true })
 }
 
 function readJson<T>(file: string, fallback: T): T {
@@ -81,6 +82,32 @@ export function readWireframe(projectId: string, file: string): string {
   } catch {
     return '<p>Wireframe not found.</p>'
   }
+}
+
+const SESSIONS_DIR = path.join(DATA_DIR, 'sessions')
+const SESSION_FRESH_MS = 90_000
+
+export function listSessions(): import('../shared/types').LiveSession[] {
+  let files: string[]
+  try {
+    files = fs.readdirSync(SESSIONS_DIR).filter((f) => f.endsWith('.json'))
+  } catch {
+    return []
+  }
+  const out: import('../shared/types').LiveSession[] = []
+  for (const f of files) {
+    const p = path.join(SESSIONS_DIR, f)
+    try {
+      const s = JSON.parse(fs.readFileSync(p, 'utf8'))
+      if (Date.now() - new Date(s.lastToolAt).getTime() < SESSION_FRESH_MS) out.push(s)
+      else fs.unlinkSync(p)
+    } catch {
+      try {
+        fs.unlinkSync(p)
+      } catch {}
+    }
+  }
+  return out.sort((a, b) => (a.lastToolAt < b.lastToolAt ? 1 : -1))
 }
 
 export function deleteProject(id: string): void {

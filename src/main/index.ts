@@ -1,8 +1,17 @@
 import { app, shell, BrowserWindow, ipcMain, clipboard } from 'electron'
 import path from 'node:path'
 import chokidar from 'chokidar'
-import { listBundles, loadBundle, readWireframe, deleteProject, ensureDataDirs, PROJECTS_DIR } from './store'
-import { detectAgents, connectAgent, mcpServerPath } from './agents'
+import {
+  listBundles,
+  loadBundle,
+  readWireframe,
+  deleteProject,
+  ensureDataDirs,
+  listSessions,
+  DATA_DIR,
+  PROJECTS_DIR
+} from './store'
+import { detectAgents, connectAgent, mcpServerPath, nodeBinPath } from './agents'
 import type { AgentId } from '../shared/types'
 
 const isDev = !app.isPackaged
@@ -104,6 +113,8 @@ app.whenReady().then(() => {
   const serverPath = mcpServerPath(__dirname, app.isPackaged)
 
   ipcMain.handle('projects:list', () => listBundles())
+  ipcMain.handle('sessions:list', () => listSessions())
+  ipcMain.handle('mcp:info', async () => ({ serverPath, nodeBin: await nodeBinPath() }))
   ipcMain.handle('projects:get', (_e, id: string) => loadBundle(id))
   ipcMain.handle('projects:delete', (_e, id: string) => deleteProject(id))
   ipcMain.handle('wireframe:read', (_e, projectId: string, file: string) =>
@@ -121,7 +132,7 @@ app.whenReady().then(() => {
   })
 
   // Live updates: the MCP server writes files; we push a change signal to the UI.
-  const watcher = chokidar.watch(PROJECTS_DIR, {
+  const watcher = chokidar.watch([PROJECTS_DIR, path.join(DATA_DIR, 'sessions')], {
     ignoreInitial: true,
     ignored: (p) => /\.tmp$|\.lock$|\.bak$|\.DS_Store$|\.corrupt-/.test(p),
     awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 40 },
