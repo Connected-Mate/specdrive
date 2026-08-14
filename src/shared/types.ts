@@ -84,6 +84,32 @@ export interface Wireframe {
   createdAt: string
 }
 
+export type ScenarioStatus = 'draft' | 'walked' | 'gap_found'
+
+export interface ScenarioStep {
+  /** What the person does, plain words: "taps Reserve on the last loaf" */
+  action: string
+  /** Screen name where it happens (matches flow/wireframe names when possible) */
+  screen?: string
+  /** What must happen next, plain words: "count drops to 0, waitlist button appears" */
+  expect?: string
+}
+
+/** A usage scenario: one person, one path through the product, step by step.
+ *  Walking them one by one is how holes and bugs get found before code. */
+export interface Scenario {
+  id: string
+  title: string
+  /** Who is doing this, e.g. "A neighbor on her phone at 8pm" */
+  actor: string
+  steps: ScenarioStep[]
+  status: ScenarioStatus
+  /** When status is gap_found: what is missing or would break, plain words */
+  gapNote?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface FlowScreen {
   id: string
   name: string
@@ -136,6 +162,7 @@ export interface ProjectBundle {
   tasks: Task[]
   wireframes: Wireframe[]
   flow: Flow | null
+  scenarios: Scenario[]
   activity: ActivityEntry[]
 }
 

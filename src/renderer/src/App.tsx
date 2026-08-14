@@ -6,6 +6,7 @@ import { GuideRail } from './components/GuideRail'
 import { ToastProvider } from './components/Toast'
 import { useAgents, useProjects } from './lib/useLive'
 import { SidebarIcon } from './components/Icons'
+import { EasterEgg } from './components/scene/EasterEgg'
 
 const SIDE_KEY = 'specdrive-sidebar'
 const NARROW = 1080
@@ -14,6 +15,7 @@ export default function App(): React.JSX.Element {
   const { projects, loaded } = useProjects()
   const { agents, connect } = useAgents()
   const [openId, setOpenId] = useState<string | null>(null)
+  const [eggOn, setEggOn] = useState(false)
   const [sideOpen, setSideOpen] = useState<boolean>(() => {
     if (window.innerWidth < NARROW) return false
     return localStorage.getItem(SIDE_KEY) !== 'closed'
@@ -88,6 +90,7 @@ export default function App(): React.JSX.Element {
           openId={open ? open.project.id : null}
           onSelect={setOpenId}
           connect={connect}
+          onEgg={() => setEggOn(true)}
         />
         {open ? (
           <Project bundle={open} />
@@ -102,6 +105,7 @@ export default function App(): React.JSX.Element {
           </main>
         )}
         <GuideRail bundle={open ?? null} />
+        {eggOn && <EasterEgg onClose={() => setEggOn(false)} />}
         <button
           className="side-toggle"
           title="Hide or show the sidebar (⌘\)"

@@ -31,7 +31,7 @@ const PHASE_GUIDE = {
   capture:
     'CAPTURE: interview the owner about their idea (one simple question at a time, no jargon). After each answer, immediately add_spec so the board fills live. When complete, set_phase to "challenge".',
   challenge:
-    'CHALLENGE: act as a fresh, skeptical reviewer. Find contradictions, vagueness, missing essentials, oversized scope. Fix via update_spec (status "challenged" + challenge_note) or add_spec. Record v1 cuts as a "decisions" spec. Then set_phase to "research".',
+    'CHALLENGE: act as a fresh, skeptical reviewer. Find contradictions, vagueness, missing essentials, oversized scope. Fix via update_spec (status "challenged" + challenge_note) or add_spec. Write 4-8 usage scenarios with add_scenario (happy paths AND unhappy paths), walk each against the specs, record gaps with update_scenario and close them. Record v1 cuts as a "decisions" spec. Then set_phase to "research".',
   research:
     'RESEARCH: search the web for similar products, reusable building blocks, pitfalls. One finding per add_spec (category "research"), with links. End with a "What we learned" spec, then set_phase to "risks".',
   risks:
@@ -117,7 +117,8 @@ function loadBundle(id) {
     specs: readJson(path.join(dir, 'specs.json'), []),
     tasks: readJson(path.join(dir, 'tasks.json'), []),
     wireframes: readJson(path.join(dir, 'wireframes.json'), []),
-    flow: readJson(path.join(dir, 'flow.json'), null)
+    flow: readJson(path.join(dir, 'flow.json'), null),
+    scenarios: readJson(path.join(dir, 'scenarios.json'), [])
   }
 }
 
@@ -477,6 +478,108 @@ server.registerTool(
 )
 
 server.registerTool(
+  'add_scenario',
+  {
+    title: 'Add a usage scenario',
+    description:
+      'One person, one path through the product, step by step ("A does B, then C happens"). Scenarios are how holes and bugs get found BEFORE code: write them during challenge/plan, walk each one against the specs (and later against the real product). One path = one scenario; cover the unhappy paths too.',
+    inputSchema: {
+      project: z.string(),
+      title: z.string().max(80).describe('Short name, e.g. "Racing for the last loaf"'),
+      actor: z.string().max(80).describe('Who is doing this, e.g. "A neighbor on her phone at 8pm"'),
+      steps: z
+        .array(
+          z.object({
+            action: z.string().max(160).describe('What the person does, plain words'),
+            screen: z.string().max(40).optional().describe('Screen where it happens (same names as set_flow)'),
+            expect: z.string().max(160).optional().describe('What must happen next')
+          })
+        )
+        .min(2)
+        .max(12)
+    }
+  },
+  async ({ project, title, actor, steps }) => {
+    const { id } = requireProject(project)
+    const dir = projectDir(id)
+    const scenarios = readJson(path.join(dir, 'scenarios.json'), [])
+    const scenario = {
+      id: uid(),
+      title,
+      actor,
+      steps,
+      status: 'draft',
+      createdAt: now(),
+      updatedAt: now()
+    }
+    scenarios.push(scenario)
+    writeJson(path.join(dir, 'scenarios.json'), scenarios)
+    saveProject(id, readJson(path.join(dir, 'project.json')))
+    logActivity(id, 'agent', 'add_scenario', `New scenario: "${title}"`)
+    return ok(
+      `Scenario "${title}" saved (id: ${scenario.id}, ${steps.length} steps). Now WALK it: check every step against the specs — if a step has no spec covering it, that is a gap. Report the walk with update_scenario (status "walked", or "gap_found" with gap_note + fix the board).`
+    )
+  }
+)
+
+server.registerTool(
+  'update_scenario',
+  {
+    title: 'Walk / update a scenario',
+    description:
+      'Record the result of walking a scenario: "walked" = every step is covered by the specs (later: verified against the real product); "gap_found" = something is missing or would break — say what in gap_note, then FIX the board (add_spec / add_task) so the gap gets closed.',
+    inputSchema: {
+      project: z.string(),
+      scenario_id: z.string(),
+      status: z.enum(['draft', 'walked', 'gap_found']),
+      gap_note: z.string().optional().describe('For gap_found: what is missing or would break, plain words'),
+      steps: z
+        .array(
+          z.object({
+            action: z.string().max(160),
+            screen: z.string().max(40).optional(),
+            expect: z.string().max(160).optional()
+          })
+        )
+        .min(2)
+        .max(12)
+        .optional()
+        .describe('Optionally rewrite the steps')
+    }
+  },
+  async ({ project, scenario_id, status, gap_note, steps }) => {
+    const { id } = requireProject(project)
+    const dir = projectDir(id)
+    const scenarios = readJson(path.join(dir, 'scenarios.json'), [])
+    const sc = scenarios.find((s) => s.id === scenario_id)
+    if (!sc) return fail(`No scenario with id "${scenario_id}". Use get_project to list them.`)
+    if (status === 'gap_found' && !gap_note && !sc.gapNote) {
+      return fail('gap_found needs gap_note: one plain sentence saying what is missing or would break.')
+    }
+    sc.status = status
+    if (gap_note !== undefined) sc.gapNote = gap_note
+    if (steps !== undefined) sc.steps = steps
+    sc.updatedAt = now()
+    writeJson(path.join(dir, 'scenarios.json'), scenarios)
+    saveProject(id, readJson(path.join(dir, 'project.json')))
+    logActivity(
+      id,
+      'agent',
+      'update_scenario',
+      `Scenario "${sc.title}" → ${status}${gap_note ? ` — ${gap_note}` : ''}`
+    )
+    const remaining = scenarios.filter((s) => s.status === 'draft').length
+    return ok(
+      `Scenario "${sc.title}" → ${status}.` +
+        (status === 'gap_found'
+          ? ' Now close the gap: add_spec / add_task so the board covers it, then re-walk.'
+          : '') +
+        (remaining ? ` ${remaining} scenario(s) still to walk.` : ' All scenarios walked.')
+    )
+  }
+)
+
+server.registerTool(
   'set_flow',
   {
     title: 'Set the visual plan (screen flow)',
@@ -564,15 +667,17 @@ server.registerTool(
     const open = bundle.tasks.filter((t) => t.status !== 'done')
     const unconfirmed = bundle.specs.filter((s) => s.status !== 'confirmed')
     const withAcceptance = bundle.specs.filter((s) => s.acceptance)
+    const scenarios = bundle.scenarios ?? []
     logActivity(id, 'agent', 'check_convergence', 'Convergence check started')
     return ok(
       `CONVERGENCE CHECK for "${bundle.project.name}" — go through this honestly, one item at a time:\n\n` +
         `1. Open tasks: ${open.length ? open.map((t) => `"${t.title}" (${t.status})`).join(', ') : 'none'}. If any exist, you are NOT done — finish or re-scope them first.\n` +
         `2. For EVERY feature/design/tech/data spec, verify the built product actually honors it. Run the product, do not assume. Specs to walk: ${bundle.specs.filter((s) => ['features', 'design', 'tech', 'data'].includes(s.category)).map((s) => `"${s.title}"`).join(', ') || '(none)'}.\n` +
         `3. Acceptance scenarios to execute for real (${withAcceptance.length}): ${withAcceptance.map((s) => `"${s.title}"`).join(', ') || 'none recorded'}. Each must pass as written — ideally as an automated test.\n` +
-        `4. Every gap, mismatch or "mostly works" you find → specdrive add_task immediately (small, verifiable). Do not silently fix without a task; the owner follows progress through the board.\n` +
-        `5. Specs the build revealed to be wrong or outdated → specdrive update_spec so the board stays the truth (${unconfirmed.length} spec(s) not yet confirmed).\n\n` +
-        `If, and only if, steps 1-5 produce zero new tasks: report "CONVERGED" to the owner in plain words and call set_phase to "done". Otherwise: build the new tasks, then run check_convergence again.`
+        `4. USAGE SCENARIOS to act out on the real product, step by step (${scenarios.length}): ${scenarios.map((s) => `"${s.title}"`).join(', ') || 'none — that is itself a gap; write them with add_scenario'}. Each step's expectation must actually happen. Update each with update_scenario ("walked" or "gap_found" + gap_note).\n` +
+        `5. Every gap, mismatch or "mostly works" you find → specdrive add_task immediately (small, verifiable). Do not silently fix without a task; the owner follows progress through the board.\n` +
+        `6. Specs the build revealed to be wrong or outdated → specdrive update_spec so the board stays the truth (${unconfirmed.length} spec(s) not yet confirmed).\n\n` +
+        `If, and only if, steps 1-6 produce zero new tasks and zero scenario gaps: report "CONVERGED" to the owner in plain words and call set_phase to "done". Otherwise: build the new tasks, then run check_convergence again.`
     )
   }
 )

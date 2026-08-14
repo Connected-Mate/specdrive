@@ -25,7 +25,63 @@ const STATUS_LABEL: Record<Spec['status'], string> = {
   confirmed: 'Confirmed'
 }
 
-type Tab = 'board' | 'plan' | 'sketches' | 'activity'
+type Tab = 'board' | 'scenarios' | 'plan' | 'sketches' | 'activity'
+
+const SCENARIO_STATUS: Record<string, { label: string; cls: string }> = {
+  draft: { label: 'To walk', cls: '' },
+  walked: { label: 'Walks clean', cls: ' badge-blue' },
+  gap_found: { label: 'Gap found', cls: ' badge-gap' }
+}
+
+function ScenariosTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
+  const { scenarios } = bundle
+  if (!scenarios.length) {
+    return (
+      <div className="empty">
+        <div className="art">No scenarios yet</div>
+        During the “Challenge” step, your AI agent writes short stories of real people
+        <br />
+        using your product — then walks each one, step by step, to catch holes before code.
+      </div>
+    )
+  }
+  return (
+    <div className="scenario-grid">
+      {scenarios.map((sc, i) => (
+        <div key={sc.id} className="scenario-card" style={{ '--i': i } as React.CSSProperties}>
+          <div className="scenario-head">
+            <div>
+              <h4>{sc.title}</h4>
+              <span className="actor">{sc.actor}</span>
+            </div>
+            <span className={`badge${SCENARIO_STATUS[sc.status]?.cls ?? ''}`}>
+              {SCENARIO_STATUS[sc.status]?.label ?? sc.status}
+            </span>
+          </div>
+          <div className="scenario-steps">
+            {sc.steps.map((st, si) => (
+              <div key={si} className="scenario-step">
+                <span className="step-no">{si + 1}</span>
+                <div className="step-body">
+                  <span className="step-action">
+                    {st.action}
+                    {st.screen && <span className="badge step-screen">{st.screen}</span>}
+                  </span>
+                  {st.expect && <span className="step-expect">→ {st.expect}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+          {sc.gapNote && (
+            <div className="scenario-gap">
+              <strong>Gap:</strong> {sc.gapNote}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 function BoardTab({
   specs,
@@ -392,6 +448,7 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
 
   const tabs: { id: Tab; label: string; count: number }[] = [
     { id: 'board', label: 'Board', count: specs.length },
+    { id: 'scenarios', label: 'Scenarios', count: bundle.scenarios.length },
     { id: 'plan', label: 'Plan', count: tasks.length },
     { id: 'sketches', label: 'Screens', count: wireframes.length },
     { id: 'activity', label: 'Activity', count: activity.length }
@@ -421,6 +478,7 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
         {tab === 'board' && (
           <BoardTab specs={specs} freshIds={freshIds} projectName={project.name} />
         )}
+        {tab === 'scenarios' && <ScenariosTab bundle={bundle} />}
         {tab === 'plan' && <PlanTab bundle={bundle} />}
         {tab === 'sketches' && <SketchesTab bundle={bundle} />}
         {tab === 'activity' && <ActivityTab bundle={bundle} />}

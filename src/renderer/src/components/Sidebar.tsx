@@ -18,13 +18,15 @@ export function Sidebar({
   agents,
   openId,
   onSelect,
-  connect
+  connect,
+  onEgg
 }: {
   projects: ProjectBundle[]
   agents: DetectedAgent[]
   openId: string | null
   onSelect: (id: string | null) => void
   connect: (id: DetectedAgent['id']) => Promise<void>
+  onEgg: () => void
 }): React.JSX.Element {
   const toast = useToast()
   const [busy, setBusy] = useState<string | null>(null)
@@ -33,7 +35,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-drag" />
-      <button className="sidebar-brand" onClick={() => onSelect(null)}>
+      <button className="sidebar-brand" onClick={() => onSelect(null)} onDoubleClick={onEgg}>
         <span className="brand-stamp">
           SpecDrive
           <span className="brand-cursor" aria-hidden>

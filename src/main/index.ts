@@ -47,7 +47,7 @@ function createWindow(): void {
           win?.webContents.executeJavaScript(
             `window.dispatchEvent(new CustomEvent('specdrive:open-tab', { detail: ${JSON.stringify(tab)} }))`
           )
-        }, 1500)
+        }, 800)
       }
       setTimeout(async () => {
         const scroll = Number(process.env.SPECDRIVE_SCROLL ?? 0)

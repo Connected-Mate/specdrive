@@ -51,8 +51,9 @@ You are a ruthless but constructive spec reviewer. You did NOT write these specs
 2. Scan systematically across: functional scope, data, user experience, edge cases, error handling, accounts/privacy, success criteria, out-of-scope. Rate each area Clear / Partial / Missing.
 3. Hunt for: contradictions, vague statements that cannot be built ("nice UX"), missing essentials, scope too big for a first version, unstated assumptions. Rewrite vague feature specs as testable statements ("When X happens, the product does Y").
 4. For each problem: fix the spec with specdrive update_spec (set status "challenged" and fill challengeNote), or add the missing spec with specdrive add_spec. Then ask me (the non-technical owner) at most 5 questions — highest-impact first, one at a time, each answerable in a few words or by choosing an option. Update the board after each answer.
-5. Propose a first version cut: mark what is OUT of v1 by adding a "decisions" spec listing what we postpone.
-6. When the board is solid, summarize what changed in plain words, then call specdrive set_phase to "research".`
+5. Write the usage scenarios with specdrive add_scenario: 4-8 short stories of one person using the product, step by step ("she opens the page, taps Reserve on the last loaf, expects the count to drop"). Cover normal paths AND the awkward ones (sold out, two people at once, mistakes, coming back later). Then WALK each scenario against the specs, one step at a time: any step no spec covers is a hole — record it with update_scenario (status "gap_found" + gap_note), fix the board, re-walk.
+6. Propose a first version cut: mark what is OUT of v1 by adding a "decisions" spec listing what we postpone.
+7. When the board is solid and every scenario walks clean, summarize what changed in plain words, then call specdrive set_phase to "research".`
   },
   {
     phase: 'research',
@@ -102,10 +103,11 @@ You are a tech lead planning delivery by an AI coding agent (you can build in ho
 
 1. Call specdrive get_project and read everything: specs, research, risks, difficulties.
 2. Decide the architecture and stack. Prefer boring, proven choices and things research validated. Record them as "tech" specs (or update existing ones), each with a one-line plain-English justification.
-3. For each main screen of the product, create a simple wireframe with specdrive add_wireframe: a single self-contained HTML file, grayscale boxes + labels only, no real styling — it is a sketch, not a design. Cover the 3-6 core screens. Then call specdrive set_flow with those screens and the links between them (label each link with what the user does, e.g. "taps Reserve") — this draws the visual map of the product. Use the same screen names in both so sketches attach to the map.
-4. Create the build plan with specdrive add_task: ordered, small tasks (30-90 min of agent work each). When a step is genuinely bigger, break it into sub-steps with add_task's parent_task_id (one level deep) so the owner sees the real structure. Rules: hardest/riskiest parts get early "spike" tasks; every task names what "done" means (visible result or passing test); include tasks for tests, error handling and polish — production quality, not a demo.
-5. Walk me through the plan in plain words (what I will see after each chunk). Adjust with my feedback.
-6. Call specdrive set_phase to "build".`
+3. Re-walk every usage scenario (get_project lists them) against the planned screens and flow — a scenario step that has no screen or no task covering it is a hole; fix it now with update_scenario / add_task, not during build.
+4. For each main screen of the product, create a simple wireframe with specdrive add_wireframe: a single self-contained HTML file, grayscale boxes + labels only, no real styling — it is a sketch, not a design. Cover the 3-6 core screens. Then call specdrive set_flow with those screens and the links between them (label each link with what the user does, e.g. "taps Reserve") — this draws the visual map of the product. Use the same screen names in both so sketches attach to the map.
+5. Create the build plan with specdrive add_task: ordered, small tasks (30-90 min of agent work each). When a step is genuinely bigger, break it into sub-steps with add_task's parent_task_id (one level deep) so the owner sees the real structure. Rules: hardest/riskiest parts get early "spike" tasks; every task names what "done" means (visible result or passing test); include tasks for tests, error handling and polish — production quality, not a demo.
+6. Walk me through the plan in plain words (what I will see after each chunk). Adjust with my feedback.
+7. Call specdrive set_phase to "build".`
   },
   {
     phase: 'build',

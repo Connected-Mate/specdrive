@@ -1270,6 +1270,134 @@ a {
   color: var(--ink);
 }
 
+/* ============ Scenarios ============ */
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+  padding-top: 6px;
+  align-items: start;
+}
+
+.scenario-card {
+  background: var(--paper);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-ring-thin);
+  padding: 18px 20px;
+  animation: spec-in 0.5s var(--ease-spring) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+  user-select: text;
+}
+
+.scenario-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.scenario-head h4 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 18px;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.scenario-head .actor {
+  display: block;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--smoke);
+  margin-top: 3px;
+}
+
+.badge-gap {
+  background: rgba(232, 168, 124, 0.22);
+  color: #a05a2c;
+}
+
+.scenario-steps {
+  display: flex;
+  flex-direction: column;
+}
+
+.scenario-step {
+  display: flex;
+  gap: 10px;
+  position: relative;
+  padding: 5px 0;
+}
+
+.scenario-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 26px;
+  bottom: -4px;
+  width: 1px;
+  background: var(--hairline);
+}
+
+.scenario-step .step-no {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--ash);
+  color: var(--graphite);
+  font-size: 10.5px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  margin-top: 1px;
+  z-index: 1;
+}
+
+.scenario-step .step-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.scenario-step .step-action {
+  font-size: 12.5px;
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+.scenario-step .step-screen {
+  margin-left: 6px;
+  font-size: 10px;
+  padding: 1.5px 7px;
+  vertical-align: 1px;
+}
+
+.scenario-step .step-expect {
+  display: block;
+  font-size: 11.5px;
+  color: var(--smoke);
+  line-height: 1.4;
+  margin-top: 1px;
+}
+
+.scenario-gap {
+  margin-top: 12px;
+  border: 1px dashed rgba(232, 168, 124, 0.7);
+  background: rgba(232, 168, 124, 0.08);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  color: var(--graphite);
+  line-height: 1.45;
+}
+
+.scenario-gap strong {
+  color: #a05a2c;
+}
+
 /* ============ Plan ============ */
 
 .plan-wrap {
@@ -1692,6 +1820,86 @@ a {
   font-size: 30px;
   color: var(--ink);
   margin-bottom: 10px;
+}
+
+/* ============ Easter egg ============ */
+
+.egg-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  cursor: pointer;
+  background: linear-gradient(180deg, #4a7ff2 0%, #7b7ed8 32%, #c98ab5 64%, #e8a87c 100%);
+  background-size: 100% 150%;
+  animation: egg-in 0.5s var(--ease-spring) both, dusk-breathe 14s ease-in-out infinite alternate;
+  display: flex;
+}
+
+@keyframes egg-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.egg-overlay .cursor-scene {
+  flex: 1;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  animation: none;
+  min-height: 0;
+}
+
+.egg-overlay .frosted-word {
+  color: #ffffff;
+  font-size: clamp(40px, 6vw, 88px);
+}
+
+.egg-overlay .frosted-layer {
+  color: #ffffff;
+}
+
+.egg-overlay .frosted-halo {
+  background: radial-gradient(ellipse 100% 100% at 50% 50%, rgba(255, 255, 255, 0.35) 0%, transparent 70%);
+}
+
+.egg-overlay .spec-chip {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.egg-robot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  height: 82%;
+  object-fit: contain;
+  object-position: bottom right;
+  animation: egg-robot-in 0.9s var(--ease-spring) 0.2s both;
+  pointer-events: none;
+}
+
+@keyframes egg-robot-in {
+  from {
+    opacity: 0;
+    transform: translateY(60px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.egg-hint {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+  animation: egg-in 0.5s ease 2s both;
 }
 
 /* ============ Toast ============ */
