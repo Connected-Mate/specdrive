@@ -25,7 +25,14 @@ export const SidebarIcon = (): React.JSX.Element => (
 
 export const TickIcon = ({ size = 12 }: { size?: number }): React.JSX.Element => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className="tick">
-    <path d="M3 8.5 6.5 12 13 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path
+      d="M3 8.5 6.5 12 13 4.5"
+      pathLength={1}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   </svg>
 )
 

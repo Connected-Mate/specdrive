@@ -1959,3 +1959,235 @@ a {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============ Micro-motion pass — small touches everywhere ============ */
+
+/* App boot: panes settle in once */
+.sidebar {
+  animation: boot-fade 0.5s ease both;
+}
+
+.rail {
+  animation: boot-fade 0.5s ease 0.08s both;
+}
+
+@keyframes boot-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Sidebar rows: staggered arrival + hover glide */
+.side-item,
+.side-new {
+  animation: side-in 0.45s var(--ease-spring) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+  transition: background 0.15s ease, transform 0.2s var(--ease-spring);
+}
+
+.side-item:hover {
+  transform: translateX(2px);
+}
+
+@keyframes side-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.agent-row {
+  animation: side-in 0.45s var(--ease-spring) both;
+  animation-delay: calc(var(--i, 0) * 40ms + 150ms);
+}
+
+/* Connected agent dot breathes, slowly */
+.agent-row .dot.on {
+  animation: dot-breathe 3.2s ease-in-out infinite;
+}
+
+@keyframes dot-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(0, 122, 255, 0.08);
+  }
+}
+
+/* The little agent cursor on the logo sways idly */
+.brand-cursor {
+  animation: cursor-sway 4.5s ease-in-out infinite alternate;
+}
+
+@keyframes cursor-sway {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    transform: translate(2px, -2px);
+  }
+}
+
+/* Tab press: the pill pops softly */
+.tab.active {
+  animation: tab-pop 0.25s var(--ease-spring);
+}
+
+@keyframes tab-pop {
+  from {
+    transform: scale(0.94);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+/* Sidebar toggle mirrors when closed */
+.side-toggle svg {
+  transition: transform 0.3s var(--ease-spring);
+}
+
+.shell.side-closed .side-toggle svg {
+  transform: scaleX(-1);
+}
+
+/* Ticks draw themselves */
+.task-check.done svg path,
+.vstep.done .bullet svg path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: tick-draw 0.35s ease-out 0.05s forwards;
+}
+
+@keyframes tick-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Done check pops in */
+.task-check.done {
+  animation: check-pop 0.3s var(--ease-spring);
+}
+
+@keyframes check-pop {
+  from {
+    transform: scale(0.6);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+/* Progress fill carries a slow light sweep while under 100% */
+.progress-fill {
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.35) 50%, transparent 100%);
+  transform: translateX(-100%);
+  animation: sweep 2.6s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  60%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* A freshly written spec card glows twice, then settles */
+.spec-card.fresh {
+  animation: spec-in 0.55s var(--ease-spring) both, fresh-glow 1.75s ease-out 2;
+}
+
+@keyframes fresh-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1.5px var(--phase-color, var(--signal-blue)),
+      0 0 10px rgba(0, 122, 255, 0.08),
+      var(--glow-ring);
+  }
+  45% {
+    box-shadow:
+      0 0 0 1.5px var(--phase-color, var(--signal-blue)),
+      0 0 28px rgba(0, 122, 255, 0.28),
+      var(--glow-ring);
+  }
+}
+
+/* Copy button flips to Copied state */
+.pill-primary.copied {
+  background: var(--ink);
+}
+
+.pill-primary.copied .tick path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: tick-draw 0.3s ease-out forwards;
+}
+
+/* Flow map: main arrows draw themselves, labels follow */
+.flow-edge-draw {
+  stroke-dashoffset: 1;
+  stroke-dasharray: 1;
+  animation: edge-draw 0.55s ease-out both;
+  animation-delay: calc(var(--i, 0) * 90ms + 200ms);
+}
+
+@keyframes edge-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.flow-edge text,
+.flow-edge rect:not(.flow-node-bg) {
+  animation: flow-in 0.4s ease both;
+  animation-delay: calc(var(--i, 0) * 90ms + 500ms);
+}
+
+/* Scenario steps arrive one after the other */
+.scenario-step {
+  animation: side-in 0.4s var(--ease-spring) both;
+  animation-delay: calc(var(--i, 0) * 60ms + var(--si, 0) * 60ms + 120ms);
+}
+
+/* Toast breathes out at the end of its life */
+.toast {
+  animation: toast-life 2.4s var(--ease-spring) both;
+}
+
+@keyframes toast-life {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  10%,
+  85% {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+}

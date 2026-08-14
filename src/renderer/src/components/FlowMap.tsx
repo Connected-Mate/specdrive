@@ -119,12 +119,19 @@ export function FlowMap({
           const alt = Boolean(l.condition)
           const txt = l.label ? (l.condition ? `${l.label} — ${l.condition}` : l.label) : l.condition
           return (
-            <g key={i} opacity={alt ? 0.8 : 1}>
+            <g
+              key={i}
+              opacity={alt ? 0.8 : 1}
+              className="flow-edge"
+              style={{ '--i': i } as React.CSSProperties}
+            >
               <path
                 d={`M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`}
                 fill="none"
                 stroke="#c4c4c4"
                 strokeWidth="1.6"
+                pathLength={alt ? undefined : 1}
+                className={alt ? undefined : 'flow-edge-draw'}
                 strokeDasharray={alt ? '6 5' : undefined}
                 markerEnd="url(#arrow)"
               />

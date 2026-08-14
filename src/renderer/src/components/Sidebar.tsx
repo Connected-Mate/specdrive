@@ -55,12 +55,13 @@ export function Sidebar({
 
       <div className="sidebar-label">Projects</div>
       <div className="sidebar-projects">
-        {projects.map((b) => {
+        {projects.map((b, i) => {
           const done = b.tasks.filter((t) => t.status === 'done').length
           return (
             <button
               key={b.project.id}
               className={`side-item${openId === b.project.id ? ' active' : ''}`}
+              style={{ '--i': i } as React.CSSProperties}
               onClick={() => onSelect(b.project.id)}
             >
               <span className="name">{b.project.name}</span>
@@ -89,8 +90,8 @@ export function Sidebar({
             None found yet. Install Claude Code or Cursor, then relaunch SpecDrive.
           </div>
         )}
-        {installed.map((a) => (
-          <div key={a.id} className="agent-row">
+        {installed.map((a, i) => (
+          <div key={a.id} className="agent-row" style={{ '--i': i } as React.CSSProperties}>
             <span className={`dot${a.connected ? ' on' : ''}`} />
             <span className="name">{a.name}</span>
             {!a.connected && (

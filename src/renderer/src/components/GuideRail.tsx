@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef, useState } from 'react'
 import type { ProjectBundle } from '@shared/types'
 import { PHASES } from '@shared/types'
 import { DEEP_DIVE_PROMPT, PHASE_PROMPTS, START_PROMPT, fillPrompt } from '@shared/prompts'
@@ -14,6 +14,37 @@ const PHASE_LABEL: Record<string, string> = {
   plan: 'Plan',
   build: 'Build',
   done: 'Done'
+}
+
+/** Copy button with inline "Copied ✓" feedback. */
+function CopyButton({ text, label }: { text: string; label: string }): React.JSX.Element {
+  const toast = useToast()
+  const [copied, setCopied] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout>>()
+  return (
+    <button
+      className={`pill pill-primary${copied ? ' copied' : ''}`}
+      onClick={() => {
+        window.specdrive.copyToClipboard(text)
+        toast('Prompt copied — paste it into your AI agent')
+        setCopied(true)
+        if (timer.current) clearTimeout(timer.current)
+        timer.current = setTimeout(() => setCopied(false), 1600)
+      }}
+    >
+      {copied ? (
+        <>
+          <TickIcon size={12} />
+          Copied
+        </>
+      ) : (
+        <>
+          <CopyIcon />
+          {label}
+        </>
+      )}
+    </button>
+  )
 }
 
 /** Right rail: always-visible guidance — where you are, what to do next. */
@@ -33,16 +64,7 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
               describe what you want to build — in your own words. Your project will appear here on
               its own.
             </p>
-            <button
-              className="pill pill-primary"
-              onClick={() => {
-                window.specdrive.copyToClipboard(START_PROMPT)
-                toast('Prompt copied — paste it into your AI agent')
-              }}
-            >
-              <CopyIcon />
-              Copy the starter prompt
-            </button>
+            <CopyButton text={START_PROMPT} label="Copy the starter prompt" />
             <div className="prompt-peek">{START_PROMPT}</div>
           </div>
         </div>
@@ -102,16 +124,7 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
               Tip — open a brand-new chat for this step. A fresh pair of eyes gives better results.
             </p>
           )}
-          <button
-            className="pill pill-primary"
-            onClick={() => {
-              window.specdrive.copyToClipboard(fillPrompt(phasePrompt.prompt, project.name))
-              toast('Prompt copied — paste it into your AI agent')
-            }}
-          >
-            <CopyIcon />
-            Copy the prompt
-          </button>
+          <CopyButton text={fillPrompt(phasePrompt.prompt, project.name)} label="Copy the prompt" />
           <div className="prompt-peek">{fillPrompt(phasePrompt.prompt, project.name)}</div>
         </div>
 

@@ -60,7 +60,7 @@ function ScenariosTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element 
           </div>
           <div className="scenario-steps">
             {sc.steps.map((st, si) => (
-              <div key={si} className="scenario-step">
+              <div key={si} className="scenario-step" style={{ '--si': si } as React.CSSProperties}>
                 <span className="step-no">{si + 1}</span>
                 <div className="step-body">
                   <span className="step-action">
