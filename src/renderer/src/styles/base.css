@@ -401,7 +401,14 @@ a {
   color: var(--ink);
   line-height: 1;
   white-space: nowrap;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.content-title .one-liner {
+  flex: 0 4 auto;
 }
 
 .content-title .one-liner {
@@ -2482,5 +2489,14 @@ a {
 }
 
 .specdrive-wf.natural > * {
+  flex: none;
+}
+
+.tab-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.12);
+  align-self: center;
+  margin: 0 4px;
   flex: none;
 }

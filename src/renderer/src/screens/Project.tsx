@@ -28,7 +28,7 @@ const STATUS_LABEL: Record<Spec['status'], string> = {
   confirmed: 'Confirmed'
 }
 
-type Tab = 'board' | 'scenarios' | 'plan' | 'sketches' | 'activity'
+type Tab = 'board' | 'scenarios' | 'sketches' | 'blueprint' | 'plan' | 'activity'
 
 const SCENARIO_STATUS: Record<string, { label: string; cls: string }> = {
   draft: { label: 'To walk', cls: '' },
@@ -233,21 +233,30 @@ function TaskRow({
   )
 }
 
-function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
-  const { tasks, planDoc } = bundle
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  if (!tasks.length && !planDoc) {
+function BlueprintTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
+  if (!bundle.planDoc) {
     return (
       <div className="empty">
-        <div className="art">No plan yet</div>
-        The build plan appears here once the “Plan” step runs — a readable plan document
-        <br />
-        with decisions and diagrams, then small ordered steps checked off as your product gets built.
+        <div className="art">No blueprint yet</div>
+        During the “Plan” step, your AI agent writes the blueprint here —<br />
+        what we are building, the decisions taken, the risks accepted, and your open questions.
       </div>
     )
   }
-  if (!tasks.length && planDoc) {
-    return <PlanDoc doc={planDoc} />
+  return <PlanDoc doc={bundle.planDoc} />
+}
+
+function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
+  const { tasks } = bundle
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  if (!tasks.length) {
+    return (
+      <div className="empty">
+        <div className="art">No plan yet</div>
+        The work list appears here once the “Plan” step runs —<br />
+        small ordered steps, each checked off as your product gets built.
+      </div>
+    )
   }
   const done = tasks.filter((t) => t.status === 'done').length
   const roots = tasks.filter((t) => !t.parentId).sort((a, b) => a.order - b.order)
@@ -264,8 +273,6 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   let row = 0
   return (
     <>
-      {planDoc && <PlanDoc doc={planDoc} />}
-      {planDoc && <h3 className="plan-steps-head">The steps</h3>}
       <div className="plan-wrap">
       <div className="progress-row">
         <div className="progress-track">
@@ -507,11 +514,12 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
     }
   }, [project.phase, tasks.length])
 
-  const tabs: { id: Tab; label: string; count: number }[] = [
+  const tabs: { id: Tab; label: string; count: number; divider?: boolean }[] = [
     { id: 'board', label: 'Board', count: specs.length },
     { id: 'scenarios', label: 'Scenarios', count: bundle.scenarios.length },
-    { id: 'plan', label: 'Plan', count: tasks.length },
     { id: 'sketches', label: 'Screens', count: wireframes.length },
+    { id: 'blueprint', label: 'Blueprint', count: bundle.planDoc ? 1 : 0 },
+    { id: 'plan', label: 'Plan', count: tasks.length, divider: true },
     { id: 'activity', label: 'Activity', count: activity.length }
   ]
 
@@ -524,14 +532,16 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
         </div>
         <div className="tabs">
           {tabs.map((t) => (
-            <button
-              key={t.id}
-              className={`tab${tab === t.id ? ' active' : ''}`}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-              {t.count > 0 && <span className="count">{t.count}</span>}
-            </button>
+            <React.Fragment key={t.id}>
+              {t.divider && <span className="tab-divider" />}
+              <button
+                className={`tab${tab === t.id ? ' active' : ''}`}
+                onClick={() => setTab(t.id)}
+              >
+                {t.label}
+                {t.count > 0 && t.id !== 'blueprint' && <span className="count">{t.count}</span>}
+              </button>
+            </React.Fragment>
           ))}
         </div>
       </div>
@@ -540,6 +550,7 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
           <BoardTab specs={specs} freshIds={freshIds} projectName={project.name} />
         )}
         {tab === 'scenarios' && <ScenariosTab bundle={bundle} />}
+        {tab === 'blueprint' && <BlueprintTab bundle={bundle} />}
         {tab === 'plan' && <PlanTab bundle={bundle} />}
         {tab === 'sketches' && <SketchesTab bundle={bundle} />}
         {tab === 'activity' && <ActivityTab bundle={bundle} />}

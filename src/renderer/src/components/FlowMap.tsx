@@ -11,11 +11,11 @@ export type FlowThumb =
 // below), user actions as labeled arrows. Longest-path layering, left to
 // right, scaled to fit the pane — no graph library, no horizontal scroll.
 
-const NODE_W = 190
-const THUMB_H = 118
-const LABEL_H = 52
+const NODE_W = 240
+const THUMB_H = 168
+const LABEL_H = 54
 const NODE_H = THUMB_H + LABEL_H
-const COL_GAP = 110
+const COL_GAP = 120
 const ROW_GAP = 36
 const PAD = 34
 
@@ -93,7 +93,7 @@ export function FlowMap({
       <svg
         className="flowmap"
         viewBox={`0 0 ${w} ${h}`}
-        style={{ width: '100%', minWidth: `${Math.round(w * 0.78)}px`, height: 'auto', display: 'block' }}
+        style={{ width: '100%', minWidth: `${Math.round(w * 0.9)}px`, height: 'auto', display: 'block' }}
       >
         <defs>
           <marker
