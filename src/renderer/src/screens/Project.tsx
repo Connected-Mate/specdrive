@@ -65,6 +65,11 @@ function BoardTab({ specs, freshIds }: { specs: Spec[]; freshIds: Set<string> })
               <div className="content-md">
                 <Markdown text={s.content} />
               </div>
+              {s.acceptance && (
+                <div className="acceptance-note">
+                  <strong>How we’ll know it works:</strong> {s.acceptance}
+                </div>
+              )}
               {s.challengeNote && (
                 <div className="challenge-note">
                   <strong>Challenged:</strong> {s.challengeNote}
@@ -178,6 +183,14 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
           <FlowMap
             flow={bundle.flow}
             sketchScreens={sketchScreens}
+            thumbs={Object.fromEntries(
+              bundle.wireframes
+                .filter((w) => docs[w.id])
+                .map((w) => [
+                  w.screen.toLowerCase(),
+                  `data:text/html;charset=utf-8,${encodeURIComponent(docs[w.id])}`
+                ])
+            )}
             onOpenScreen={(name) => {
               const wf = bundle.wireframes.find(
                 (w) => w.screen.toLowerCase() === name.toLowerCase()

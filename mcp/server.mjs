@@ -39,8 +39,8 @@ const PHASE_GUIDE = {
   plan:
     'PLAN: choose architecture (record as "tech" specs), sketch 3-6 core screens with add_wireframe (grayscale boxes HTML), define the screen flow with set_flow (screens + labeled links — the owner\'s visual map), create small ordered tasks with add_task (spikes for hard parts first, each with a clear "done" meaning). Then set_phase to "build".',
   build:
-    'BUILD: strict loop — take first "todo" task, set "in_progress", re-read its specs, build production-grade, VERIFY it works, set "done" with a plain-words note. Blocked? mark "blocked" + note, move on. All done → set_phase to "done".',
-  done: 'DONE: v1 is complete. New ideas → new specs → new tasks → set_phase back to "build".'
+    'BUILD: strict loop — take first "todo" task, set "in_progress", re-read its specs, build production-grade, VERIFY it works, set "done" with a plain-words note. Blocked? mark "blocked" + note, move on. When the task list looks finished, call check_convergence and honestly compare code vs board; gaps become new tasks. Only a clean convergence check earns set_phase to "done".',
+  done: 'DONE: v1 is complete and converged. Fold any lasting decisions into the specs (update_spec, status "confirmed") so the board stays the truth. New ideas → new specs → new tasks → set_phase back to "build".'
 }
 
 // ---------- tiny store ----------
@@ -272,10 +272,16 @@ server.registerTool(
         .min(1)
         .describe('Markdown body. Start with 1-2 plain sentences a non-developer understands; details/links after.'),
       tags: z.array(z.string()).optional(),
-      difficulty: z.number().int().min(1).max(5).optional().describe('1 easy → 5 hardest')
+      difficulty: z.number().int().min(1).max(5).optional().describe('1 easy → 5 hardest'),
+      acceptance: z
+        .string()
+        .optional()
+        .describe(
+          'How we will know it works: short Given/When/Then scenario(s), plain language. Becomes the basis for real acceptance tests during build.'
+        )
     }
   },
-  async ({ project, category, title, content, tags, difficulty }) => {
+  async ({ project, category, title, content, tags, difficulty, acceptance }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
     const specs = readJson(path.join(dir, 'specs.json'), [])
@@ -286,6 +292,7 @@ server.registerTool(
       content,
       status: 'draft',
       difficulty,
+      acceptance,
       tags: tags ?? [],
       createdAt: now(),
       updatedAt: now()
@@ -514,6 +521,33 @@ server.registerTool(
     logActivity(id, 'agent', 'set_phase', summary ? `${prev} → ${phase}: ${summary}` : `${prev} → ${phase}`)
     return ok(
       `Phase is now "${phase}".\nWhat to do → ${PHASE_GUIDE[phase]}\n\nIMPORTANT for the owner experience: if you have finished your role in the previous phase, tell the owner to go back to the SpecDrive app — it shows them the exact prompt for the "${phase}" step (often in a FRESH agent session, which gives better results than continuing here).`
+    )
+  }
+)
+
+server.registerTool(
+  'check_convergence',
+  {
+    title: 'Convergence check — does the code match the board?',
+    description:
+      'The honesty ritual of the build phase. Call after finishing the task list (and after any big iteration): it hands you the checklist for comparing what was ACTUALLY built against every spec and task. Any gap you find must become a new task via add_task. Loop build → check_convergence until it comes back clean.',
+    inputSchema: { project: z.string() }
+  },
+  async ({ project }) => {
+    const { id } = requireProject(project)
+    const bundle = loadBundle(id)
+    const open = bundle.tasks.filter((t) => t.status !== 'done')
+    const unconfirmed = bundle.specs.filter((s) => s.status !== 'confirmed')
+    const withAcceptance = bundle.specs.filter((s) => s.acceptance)
+    logActivity(id, 'agent', 'check_convergence', 'Convergence check started')
+    return ok(
+      `CONVERGENCE CHECK for "${bundle.project.name}" — go through this honestly, one item at a time:\n\n` +
+        `1. Open tasks: ${open.length ? open.map((t) => `"${t.title}" (${t.status})`).join(', ') : 'none'}. If any exist, you are NOT done — finish or re-scope them first.\n` +
+        `2. For EVERY feature/design/tech/data spec, verify the built product actually honors it. Run the product, do not assume. Specs to walk: ${bundle.specs.filter((s) => ['features', 'design', 'tech', 'data'].includes(s.category)).map((s) => `"${s.title}"`).join(', ') || '(none)'}.\n` +
+        `3. Acceptance scenarios to execute for real (${withAcceptance.length}): ${withAcceptance.map((s) => `"${s.title}"`).join(', ') || 'none recorded'}. Each must pass as written — ideally as an automated test.\n` +
+        `4. Every gap, mismatch or "mostly works" you find → specdrive add_task immediately (small, verifiable). Do not silently fix without a task; the owner follows progress through the board.\n` +
+        `5. Specs the build revealed to be wrong or outdated → specdrive update_spec so the board stays the truth (${unconfirmed.length} spec(s) not yet confirmed).\n\n` +
+        `If, and only if, steps 1-5 produce zero new tasks: report "CONVERGED" to the owner in plain words and call set_phase to "done". Otherwise: build the new tasks, then run check_convergence again.`
     )
   }
 )

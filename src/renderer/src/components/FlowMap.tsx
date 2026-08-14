@@ -5,10 +5,10 @@ import type { Flow } from '@shared/types'
 // user actions as labeled arrows. No graph library — small, offline, ours.
 
 const NODE_W = 172
-const NODE_H = 64
 const COL_GAP = 92
 const ROW_GAP = 26
 const PAD = 24
+const THUMB_H = 74
 
 interface Node {
   id: string
@@ -19,7 +19,11 @@ interface Node {
   hasSketch: boolean
 }
 
-function layout(flow: Flow, sketchScreens: Set<string>): { nodes: Node[]; w: number; h: number } {
+function layout(
+  flow: Flow,
+  sketchScreens: Set<string>,
+  NODE_H: number
+): { nodes: Node[]; w: number; h: number } {
   const ids = flow.screens.map((s) => s.id)
   const incoming = new Map<string, number>(ids.map((id) => [id, 0]))
   for (const l of flow.links) incoming.set(l.to, (incoming.get(l.to) ?? 0) + 1)
@@ -69,13 +73,21 @@ function layout(flow: Flow, sketchScreens: Set<string>): { nodes: Node[]; w: num
 export function FlowMap({
   flow,
   sketchScreens,
+  thumbs,
   onOpenScreen
 }: {
   flow: Flow
   sketchScreens: Set<string>
+  /** screen name (lowercase) → data-url of its wireframe, for in-node thumbnails */
+  thumbs: Record<string, string>
   onOpenScreen: (screenName: string) => void
 }): React.JSX.Element {
-  const { nodes, w, h } = useMemo(() => layout(flow, sketchScreens), [flow, sketchScreens])
+  const anyThumb = flow.screens.some((s) => thumbs[s.name.toLowerCase()])
+  const NODE_H = anyThumb ? 64 + THUMB_H : 64
+  const { nodes, w, h } = useMemo(
+    () => layout(flow, sketchScreens, NODE_H),
+    [flow, sketchScreens, NODE_H]
+  )
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
 
   return (
@@ -128,26 +140,60 @@ export function FlowMap({
             </g>
           )
         })}
-        {nodes.map((n, i) => (
-          <g
-            key={n.id}
-            className={`flow-node${n.hasSketch ? ' clickable' : ''}`}
-            transform={`translate(${n.x}, ${n.y})`}
-            style={{ '--i': i } as React.CSSProperties}
-            onClick={() => n.hasSketch && onOpenScreen(n.name)}
-          >
-            <rect width={NODE_W} height={NODE_H} rx={16} className="flow-node-bg" />
-            <text x={16} y={n.purpose ? 27 : 37} className="flow-name">
-              {n.name.length > 20 ? n.name.slice(0, 19) + '…' : n.name}
-            </text>
-            {n.purpose && (
-              <text x={16} y={45} className="flow-purpose">
-                {n.purpose.length > 26 ? n.purpose.slice(0, 25) + '…' : n.purpose}
+        {nodes.map((n, i) => {
+          const thumb = thumbs[n.name.toLowerCase()]
+          const textTop = thumb ? THUMB_H : 0
+          return (
+            <g
+              key={n.id}
+              className={`flow-node${n.hasSketch ? ' clickable' : ''}`}
+              transform={`translate(${n.x}, ${n.y})`}
+              style={{ '--i': i } as React.CSSProperties}
+              onClick={() => n.hasSketch && onOpenScreen(n.name)}
+            >
+              <rect width={NODE_W} height={NODE_H} rx={16} className="flow-node-bg" />
+              {thumb && (
+                <>
+                  <clipPath id={`thumb-${n.id}`}>
+                    <path
+                      d={`M 0 16 Q 0 0 16 0 L ${NODE_W - 16} 0 Q ${NODE_W} 0 ${NODE_W} 16 L ${NODE_W} ${THUMB_H} L 0 ${THUMB_H} Z`}
+                    />
+                  </clipPath>
+                  <g clipPath={`url(#thumb-${n.id})`}>
+                    <foreignObject width={NODE_W} height={THUMB_H}>
+                      <iframe
+                        sandbox=""
+                        src={thumb}
+                        tabIndex={-1}
+                        style={{
+                          width: NODE_W * 2.6,
+                          height: THUMB_H * 2.6 + 90,
+                          transform: 'scale(0.385)',
+                          transformOrigin: 'top left',
+                          border: 'none',
+                          background: '#fff',
+                          pointerEvents: 'none'
+                        }}
+                      />
+                    </foreignObject>
+                    <rect width={NODE_W} height={THUMB_H} fill="transparent" stroke="rgba(0,0,0,0.06)" />
+                  </g>
+                </>
+              )}
+              <text x={16} y={textTop + (n.purpose ? 27 : 37)} className="flow-name">
+                {n.name.length > 20 ? n.name.slice(0, 19) + '…' : n.name}
               </text>
-            )}
-            {n.hasSketch && <circle cx={NODE_W - 14} cy={14} r={3.5} className="flow-sketch-dot" />}
-          </g>
-        ))}
+              {n.purpose && (
+                <text x={16} y={textTop + 45} className="flow-purpose">
+                  {n.purpose.length > 26 ? n.purpose.slice(0, 25) + '…' : n.purpose}
+                </text>
+              )}
+              {n.hasSketch && (
+                <circle cx={NODE_W - 14} cy={textTop + 14} r={3.5} className="flow-sketch-dot" />
+              )}
+            </g>
+          )
+        })}
       </svg>
     </div>
   )

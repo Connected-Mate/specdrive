@@ -1001,6 +1001,20 @@ a {
   flex-wrap: wrap;
 }
 
+.spec-card .acceptance-note {
+  margin-top: 8px;
+  border: 1px dashed rgba(0, 122, 255, 0.35);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  color: var(--graphite);
+  line-height: 1.45;
+}
+
+.spec-card .acceptance-note strong {
+  color: var(--signal-blue);
+}
+
 .spec-card .challenge-note {
   margin-top: 8px;
   background: var(--ash);

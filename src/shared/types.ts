@@ -49,6 +49,8 @@ export interface Spec {
   difficulty?: number
   /** Note left by the challenge pass explaining what was questioned/changed */
   challengeNote?: string
+  /** Given/When/Then scenario(s), plain language — basis for acceptance tests */
+  acceptance?: string
   tags: string[]
   createdAt: string
   updatedAt: string
