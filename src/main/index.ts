@@ -5,6 +5,7 @@ import {
   listBundles,
   loadBundle,
   readWireframe,
+  readDocument,
   deleteProject,
   ensureDataDirs,
   listSessions,
@@ -127,6 +128,9 @@ app.whenReady().then(() => {
   ipcMain.handle('projects:delete', (_e, id: string) => deleteProject(id))
   ipcMain.handle('wireframe:read', (_e, projectId: string, file: string) =>
     readWireframe(projectId, file)
+  )
+  ipcMain.handle('document:read', (_e, projectId: string, file: string) =>
+    readDocument(projectId, file)
   )
   ipcMain.handle('agents:detect', () => detectAgents(serverPath))
   ipcMain.handle('agents:connect', async (_e, id: AgentId) => {

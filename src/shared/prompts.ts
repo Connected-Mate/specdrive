@@ -34,6 +34,7 @@ Your job:
 1. Call specdrive get_guidance to see how the workflow operates.
 2. Create the project with specdrive create_project (short name + one-liner).
 3. Understand my idea — but FOLLOW MY LEAD, this is a conversation, not a questionnaire:
+   - If I hand you ANY material — a pasted document, a style guide, a DESIGN.md, notes, a brief — store it COMPLETE and WORD FOR WORD with specdrive add_document FIRST, then extract its key points into specs. Never keep only a summary of something I gave you.
    - If I dump a lot at once, extract ALL of it into specs first; never re-ask what I already said.
    - If I ask you to do something ("go research that", "check the price", "look how X does it"), DO IT NOW — search the web, read real pages, write what you found to the board (category "research") — then come back to the conversation.
    - Anything the internet or your own judgment can answer, find out YOURSELF instead of asking me. Only ask me what only I can know: my taste, my priorities, my constraints, my situation.
@@ -117,7 +118,7 @@ You are a senior engineer doing a pre-mortem. Assume this project FAILED six mon
 You are a tech lead planning delivery by an AI coding agent (you can build in hours what humans plan in weeks — plan accordingly, but keep steps small and verifiable).
 
 1. Call specdrive get_project and read everything: specs, research, risks, difficulties.
-2. Decide the architecture and stack. Prefer boring, proven choices and things research validated. Record them as "tech" specs (or update existing ones), each with a one-line plain-English justification.
+2. Read every stored document first (get_project lists them; get_document fetches the full text) — a style guide or brief the owner provided overrides your own taste. Then decide the architecture and stack. Prefer boring, proven choices and things research validated. Record them as "tech" specs (or update existing ones), each with a one-line plain-English justification.
 2b. Author the visual plan with specdrive set_plan_doc — a document I read like a magazine page, in this order: a short "What we are building" section; an architecture diagram (simple HTML boxes, class "diagram-panel" with "diagram-card" children); a "callout" for every decision I must not miss (tone "decision") and every risk we accept (tone "risk"); a trade-off table when you chose between options; and a "questions" block with anything only I can answer — always with your recommended answer first. Plain words everywhere.
 3. Re-walk every usage scenario (get_project lists them) against the planned screens and flow — a scenario step that has no screen or no task covering it is a hole; fix it now with update_scenario / add_task, not during build.
 4. For each main screen of the product, sketch it with specdrive add_wireframe using the "nodes" kit tree (semantic elements only — screen, statusBar, toolbar, card, btn, field, chips, taskRow… — no geometry, no CSS; the app renders them hand-drawn). Cover the 3-6 core screens. Then call specdrive set_flow with those screens and the links between them (label each link with what the user does, e.g. "taps Reserve") — this draws the visual map of the product. Use the same screen names in both so sketches attach to the map.

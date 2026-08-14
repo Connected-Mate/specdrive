@@ -185,7 +185,20 @@ export interface ProjectBundle {
   flow: Flow | null
   scenarios: Scenario[]
   planDoc: PlanDoc | null
+  documents: SourceDocument[]
   activity: ActivityEntry[]
+}
+
+/** Source material the owner handed over — stored complete, never summarized. */
+export interface SourceDocument {
+  id: string
+  title: string
+  kind: 'style-guide' | 'notes' | 'reference' | 'spec' | 'other'
+  /** Relative filename inside the project's documents/ dir */
+  file: string
+  /** Characters in the stored document */
+  size: number
+  createdAt: string
 }
 
 /** A live MCP session: an agent currently talking to the board. */
@@ -237,6 +250,8 @@ export interface SpecDriveApi {
   copyToClipboard(text: string): Promise<void>
   /** Read a wireframe HTML file (sandbox-rendered by the app) */
   readWireframe(projectId: string, file: string): Promise<string>
+  /** Read a stored source document, verbatim */
+  readDocument(projectId: string, file: string): Promise<string>
   /** Subscribe to live project changes; returns unsubscribe */
   onProjectsChanged(cb: () => void): () => void
   openExternal(url: string): Promise<void>

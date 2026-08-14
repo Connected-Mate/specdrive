@@ -58,6 +58,7 @@ export function loadBundle(id: string): ProjectBundle | null {
     flow: readJson(path.join(dir, 'flow.json'), null),
     scenarios: readJson(path.join(dir, 'scenarios.json'), []),
     planDoc: readJson(path.join(dir, 'plan-doc.json'), null),
+    documents: readJson(path.join(dir, 'documents.json'), []),
     activity: readActivity(dir)
   } as ProjectBundle
 }
@@ -81,6 +82,17 @@ export function readWireframe(projectId: string, file: string): string {
     return fs.readFileSync(path.join(PROJECTS_DIR, pid, 'wireframes', safe), 'utf8')
   } catch {
     return '<p>Wireframe not found.</p>'
+  }
+}
+
+export function readDocument(projectId: string, file: string): string {
+  const pid = safeId(projectId)
+  const safe = path.basename(file)
+  if (!pid || !/^[a-z0-9]+\.md$/.test(safe)) return 'Document not found.'
+  try {
+    return fs.readFileSync(path.join(PROJECTS_DIR, pid, 'documents', safe), 'utf8')
+  } catch {
+    return 'Document not found.'
   }
 }
 

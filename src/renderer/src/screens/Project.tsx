@@ -87,16 +87,58 @@ function ScenariosTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element 
   )
 }
 
+function DocumentsStrip({
+  bundle,
+  onOpen
+}: {
+  bundle: ProjectBundle
+  onOpen: (doc: ProjectBundle['documents'][number]) => void
+}): React.JSX.Element | null {
+  if (!bundle.documents.length) return null
+  return (
+    <div className="docs-strip">
+      <span className="rail-mini-label">Your documents</span>
+      <div className="docs-row">
+        {bundle.documents.map((d, i) => (
+          <button
+            key={d.id}
+            className="doc-chip"
+            style={{ '--i': i } as React.CSSProperties}
+            onClick={() => onOpen(d)}
+          >
+            <span className="doc-icon">▤</span>
+            <span className="doc-name">{d.title}</span>
+            <span className="doc-meta">
+              {d.kind} · {(d.size / 1000).toFixed(1)}k
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function BoardTab({
+  bundle,
   specs,
   freshIds,
   projectName
 }: {
+  bundle: ProjectBundle
   specs: Spec[]
   freshIds: Set<string>
   projectName: string
 }): React.JSX.Element {
   const [openSpec, setOpenSpec] = useState<Spec | null>(null)
+  const [openDoc, setOpenDoc] = useState<ProjectBundle['documents'][number] | null>(null)
+  const [docText, setDocText] = useState<string>('')
+  useEffect(() => {
+    if (!openDoc) return
+    window.specdrive
+      .readDocument(bundle.project.id, openDoc.file)
+      .then(setDocText)
+      .catch(() => setDocText('Document not found.'))
+  }, [openDoc, bundle.project.id])
   const groups = useMemo(() => {
     const byCat = new Map<SpecCategory, Spec[]>()
     for (const cat of SPEC_CATEGORIES) {
@@ -119,12 +161,32 @@ function BoardTab({
     )
   }
 
+  if (openDoc) {
+    return (
+      <SpecDetail
+        spec={{
+          id: openDoc.id,
+          category: 'design',
+          title: openDoc.title,
+          content: docText || 'Loading…',
+          status: 'confirmed',
+          tags: [openDoc.kind],
+          createdAt: openDoc.createdAt,
+          updatedAt: openDoc.createdAt
+        }}
+        onClose={() => setOpenDoc(null)}
+      />
+    )
+  }
+
   if (openSpec) {
     const live = specs.find((x) => x.id === openSpec.id) ?? openSpec
     return <SpecDetail spec={live} onClose={() => setOpenSpec(null)} />
   }
 
   return (
+    <>
+    <DocumentsStrip bundle={bundle} onOpen={setOpenDoc} />
     <div className="board">
       {[...groups.entries()].map(([cat, items]) => (
         <div className="board-group" key={cat}>
@@ -177,6 +239,7 @@ function BoardTab({
         </div>
       ))}
     </div>
+    </>
   )
 }
 
@@ -560,7 +623,7 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
       </div>
       <div className="content-body">
         {tab === 'board' && (
-          <BoardTab specs={specs} freshIds={freshIds} projectName={project.name} />
+          <BoardTab bundle={bundle} specs={specs} freshIds={freshIds} projectName={project.name} />
         )}
         {tab === 'scenarios' && <ScenariosTab bundle={bundle} />}
         {tab === 'blueprint' && <BlueprintTab bundle={bundle} />}

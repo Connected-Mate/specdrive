@@ -2819,3 +2819,54 @@ a {
 .spec-card.clickable:hover {
   box-shadow: var(--glow-ring), 0 0 0 1px rgba(0, 0, 0, 0.1);
 }
+
+/* ============ Owner documents strip ============ */
+
+.docs-strip {
+  margin: 2px 2px 16px;
+}
+
+.docs-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.doc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--paper);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--glow-ring-thin);
+  padding: 8px 14px;
+  font-size: 12.5px;
+  animation: spec-in 0.45s var(--ease-spring) both;
+  animation-delay: calc(var(--i, 0) * 50ms);
+  transition: transform 0.2s var(--ease-spring), box-shadow 0.2s ease;
+}
+
+.doc-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--glow-ring);
+}
+
+.doc-chip .doc-icon {
+  color: var(--signal-blue);
+  font-size: 13px;
+}
+
+.doc-chip .doc-name {
+  font-weight: 500;
+  color: var(--ink);
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-chip .doc-meta {
+  font-size: 10.5px;
+  color: var(--smoke);
+}

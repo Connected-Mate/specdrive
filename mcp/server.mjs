@@ -176,7 +176,8 @@ function loadBundle(id) {
     wireframes: readJson(path.join(dir, 'wireframes.json'), []),
     flow: readJson(path.join(dir, 'flow.json'), null),
     scenarios: readJson(path.join(dir, 'scenarios.json'), []),
-    planDoc: readJson(path.join(dir, 'plan-doc.json'), null)
+    planDoc: readJson(path.join(dir, 'plan-doc.json'), null),
+    documents: readJson(path.join(dir, 'documents.json'), []).map((d) => ({ ...d, note: 'full text via get_document' }))
   }
 }
 
@@ -325,7 +326,7 @@ server.registerTool(
         Object.entries(PHASE_GUIDE)
           .map(([p, g]) => `• ${p}: ${g}`)
           .join('\n') +
-        `\n\nGround rules:\n- The board is the single source of truth; write EVERYTHING you learn or decide into it immediately (small focused specs, one topic each).\n- Follow the owner\'s lead: if they ask you to research, compare or check something, do it right away and write the findings to the board — do not push on with your own question list.\n- Never ask the owner a question the web or the board can answer; ask only what only they can know, one short question at a time, your recommended answer first.\n- Talk to the owner in plain words, never jargon.\n- Never invent progress: only mark tasks done after verifying they work.` +
+        `\n\nGround rules:\n- The board is the single source of truth; write EVERYTHING you learn or decide into it immediately (small focused specs, one topic each).\n- Follow the owner\'s lead: if they ask you to research, compare or check something, do it right away and write the findings to the board — do not push on with your own question list.\n- The owner hands you a document, a pasted text, a style guide, ANY material → store it COMPLETE and VERBATIM with add_document BEFORE anything else, then extract specs from it. Never summarize away what the owner gave you.\n- Never ask the owner a question the web or the board can answer; ask only what only they can know, one short question at a time, your recommended answer first.\n- Talk to the owner in plain words, never jargon.\n- Never invent progress: only mark tasks done after verifying they work.` +
         current
     )
   }
@@ -742,6 +743,64 @@ server.registerTool(
     return ok(
       `Visual plan saved (${blocks.length} blocks) — the owner now reads it above the task list. Next: wireframes (add_wireframe), the screen flow (set_flow), then the tasks (add_task).`
     )
+  }
+)
+
+server.registerTool(
+  'add_document',
+  {
+    title: 'Store a document the owner gave you — complete, verbatim',
+    description:
+      'MANDATORY whenever the owner pastes or hands over ANY material (a style guide, a DESIGN.md, notes, a brief, reference text): store it here FIRST, COMPLETE and WORD FOR WORD — never summarized, never trimmed. Then extract the key points into specs that mention the document title. Losing owner-provided content is the worst failure this workflow can have.',
+    inputSchema: {
+      project: z.string(),
+      title: z.string().max(80).describe('e.g. "DESIGN.md — Flighty style guide"'),
+      kind: z.enum(['style-guide', 'notes', 'reference', 'spec', 'other']),
+      content: z
+        .string()
+        .min(1)
+        .max(400000)
+        .describe('The FULL document, exactly as the owner gave it. Do not compress.')
+    }
+  },
+  async ({ project, title, kind, content }) => {
+    const { id } = requireProject(project)
+    const dir = projectDir(id)
+    const did = uid()
+    const file = `${did}.md`
+    fs.mkdirSync(path.join(dir, 'documents'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'documents', file), content)
+    updateJson(path.join(dir, 'documents.json'), [], (docs) => {
+      docs.push({ id: did, title, kind, file, size: content.length, createdAt: now() })
+    })
+    touchProject(id)
+    logActivity(id, 'agent', 'add_document', `Document stored: "${title}" (${content.length.toLocaleString()} chars)`)
+    return ok(
+      `Document "${title}" stored complete (${content.length.toLocaleString()} characters, id: ${did}). The owner sees it on the board. Now extract its key points into specs (add_spec) that reference "${title}" — the full text stays here as the source of truth. Read it back anytime with get_document.`
+    )
+  }
+)
+
+server.registerTool(
+  'get_document',
+  {
+    title: 'Read back a stored document',
+    description: 'Fetch the full verbatim content of a document stored with add_document.',
+    inputSchema: { project: z.string(), document_id: z.string() }
+  },
+  async ({ project, document_id }) => {
+    const { id } = requireProject(project)
+    const docs = readJson(path.join(projectDir(id), 'documents.json'), [])
+    const doc = docs.find((d) => d.id === document_id)
+    if (!doc) {
+      return fail(
+        `No document "${document_id}". Stored: ${docs.map((d) => `${d.id} ("${d.title}")`).join(', ') || 'none'}`
+      )
+    }
+    const content = fs.readFileSync(path.join(projectDir(id), 'documents', doc.file), 'utf8')
+    return ok(`# ${doc.title} [${doc.kind}]
+
+${content}`)
   }
 )
 

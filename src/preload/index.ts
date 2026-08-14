@@ -12,6 +12,8 @@ const api: SpecDriveApi = {
   copyToClipboard: (text: string) => ipcRenderer.invoke('clipboard:copy', text),
   readWireframe: (projectId: string, file: string) =>
     ipcRenderer.invoke('wireframe:read', projectId, file),
+  readDocument: (projectId: string, file: string) =>
+    ipcRenderer.invoke('document:read', projectId, file),
   onProjectsChanged: (cb: () => void) => {
     const listener = (): void => cb()
     ipcRenderer.on('projects:changed', listener)
