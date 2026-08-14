@@ -18,27 +18,31 @@ export function GlitchBadge({ word }: { word: string }): React.JSX.Element {
     const engine = new GlitchWord(base, layers, word, reduced)
     engine.setOptions(IDLE)
 
-    let onScreen = false
+    // Calm at rest — the tear only runs while the pointer hovers it.
+    let hovered = false
     let hidden = false
     const sync = (): void => {
-      if (onScreen && !hidden) engine.start()
+      if (hovered && !hidden) engine.start()
       else engine.stop()
     }
-    const io = new IntersectionObserver(
-      (es) => {
-        onScreen = es.some((e) => e.isIntersecting)
-        sync()
-      },
-      { rootMargin: '100px' }
-    )
-    io.observe(host)
+    const onEnter = (): void => {
+      hovered = true
+      sync()
+    }
+    const onLeave = (): void => {
+      hovered = false
+      sync()
+    }
+    host.addEventListener('pointerenter', onEnter)
+    host.addEventListener('pointerleave', onLeave)
     const onVis = (): void => {
       hidden = document.hidden
       sync()
     }
     document.addEventListener('visibilitychange', onVis)
     return () => {
-      io.disconnect()
+      host.removeEventListener('pointerenter', onEnter)
+      host.removeEventListener('pointerleave', onLeave)
       document.removeEventListener('visibilitychange', onVis)
       engine.destroy()
     }

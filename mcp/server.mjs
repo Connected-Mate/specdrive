@@ -240,25 +240,41 @@ const server = new McpServer({ name: 'specdrive', version: '0.1.0' })
 const SESSIONS_DIR = path.join(DATA_DIR, 'sessions')
 const SESSION_FILE = path.join(SESSIONS_DIR, `${process.pid}.json`)
 let sessionStartedAt = null
+let lastSession = null
+let heartbeatTimer = null
+
+function writeSessionFile() {
+  if (!lastSession) return
+  try {
+    fs.mkdirSync(SESSIONS_DIR, { recursive: true })
+    writeJson(SESSION_FILE, { ...lastSession, heartbeatAt: now() })
+  } catch {}
+}
 
 function recordSession(tool, projectRef) {
   try {
-    fs.mkdirSync(SESSIONS_DIR, { recursive: true })
     if (!sessionStartedAt) sessionStartedAt = now()
     let client = { name: 'AI agent', version: '' }
     try {
       const info = server.server.getClientVersion()
       if (info?.name) client = { name: info.name, version: info.version ?? '' }
     } catch {}
-    writeJson(SESSION_FILE, {
+    lastSession = {
       pid: process.pid,
       client: client.name,
       version: client.version,
       lastTool: tool,
-      project: projectRef ?? null,
+      project: projectRef ?? lastSession?.project ?? null,
       lastToolAt: now(),
       startedAt: sessionStartedAt
-    })
+    }
+    writeSessionFile()
+    // Keep the presence alive between tool calls: the agent session stays
+    // connected while it thinks/talks, so beat every 25s until exit.
+    if (!heartbeatTimer) {
+      heartbeatTimer = setInterval(writeSessionFile, 25000)
+      heartbeatTimer.unref()
+    }
   } catch {
     // presence is best-effort
   }

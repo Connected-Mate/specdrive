@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import type { DetectedAgent, ProjectBundle } from '@shared/types'
 import { useToast } from './Toast'
 import { PHASE_COLOR } from '@/lib/phaseColors'
@@ -30,6 +30,12 @@ export function Sidebar({
 }): React.JSX.Element {
   const toast = useToast()
   const [busy, setBusy] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  useEffect(() => {
+    if (!confirmDelete) return
+    const t = setTimeout(() => setConfirmDelete(null), 3500)
+    return () => clearTimeout(t)
+  }, [confirmDelete])
   const installed = agents.filter((a) => a.installed)
 
   return (
@@ -57,12 +63,18 @@ export function Sidebar({
       <div className="sidebar-projects">
         {projects.map((b, i) => {
           const done = b.tasks.filter((t) => t.status === 'done').length
+          const confirming = confirmDelete === b.project.id
           return (
-            <button
+            <div
               key={b.project.id}
+              role="button"
+              tabIndex={0}
               className={`side-item${openId === b.project.id ? ' active' : ''}`}
               style={{ '--i': i } as React.CSSProperties}
               onClick={() => onSelect(b.project.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') onSelect(b.project.id)
+              }}
             >
               <span className="name">{b.project.name}</span>
               <span className="sub">
@@ -73,7 +85,24 @@ export function Sidebar({
                 {PHASE_SHORT[b.project.phase]}
                 {b.tasks.length > 0 && ` · ${done}/${b.tasks.length}`}
               </span>
-            </button>
+              <button
+                className={`side-delete${confirming ? ' confirming' : ''}`}
+                aria-label={confirming ? `Really delete ${b.project.name}` : `Delete ${b.project.name}`}
+                onClick={async (e) => {
+                  e.stopPropagation()
+                  if (!confirming) {
+                    setConfirmDelete(b.project.id)
+                    return
+                  }
+                  setConfirmDelete(null)
+                  await window.specdrive.deleteProject(b.project.id)
+                  if (openId === b.project.id) onSelect(null)
+                  toast(`"${b.project.name}" moved to SpecDrive's trash`)
+                }}
+              >
+                {confirming ? 'Sure?' : '✕'}
+              </button>
+            </div>
           )
         })}
         <button className="side-new" onClick={() => onSelect(null)}>

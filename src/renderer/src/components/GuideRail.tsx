@@ -130,12 +130,12 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
         <div className="rail-body">
           <LiveSessionCard sessions={sessions} />
           <div className="next-step">
-            <span className="rail-mini-label">Start here</span>
-            <h2>Tell your idea</h2>
+            <span className="rail-mini-label">{sessions.length ? 'In session' : 'Start here'}</span>
+            <h2>{sessions.length ? `${clientLabel(sessions[0].client)} is on it` : 'Tell your idea'}</h2>
             <p className="how">
-              Copy this prompt, paste it into a connected AI agent (Claude Code, Cursor…), and
-              describe what you want to build — in your own words. Your project will appear here on
-              its own.
+              {sessions.length
+                ? 'An agent is already talking to the board — keep the conversation going in its chat. Starting a separate, brand-new chat? Paste the starter prompt there.'
+                : 'Copy this prompt, paste it into a connected AI agent (Claude Code, Cursor…), and describe what you want to build — in your own words. Your project will appear here on its own.'}
             </p>
             <CopyButton text={fillPrompt(START_PROMPT, '', undefined, mcp)} label="Copy the starter prompt" />
             <div className="prompt-peek">{fillPrompt(START_PROMPT, '', undefined, mcp)}</div>
@@ -146,6 +146,13 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
   }
 
   const { project, specs } = bundle
+  const projectSessions = sessions.filter(
+    (x) =>
+      !x.project ||
+      x.project === bundle.project.id ||
+      x.project.toLowerCase() === bundle.project.name.toLowerCase()
+  )
+  const liveHere = projectSessions.length > 0
   const phasePrompt = PHASE_PROMPTS.find((p) => p.phase === project.phase) ?? PHASE_PROMPTS[0]
   const currentIdx = PHASES.indexOf(project.phase)
   const deepDives = specs.filter((s) => s.category === 'risks' && (s.difficulty ?? 0) >= 4)
@@ -155,14 +162,7 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
     <aside className="rail" style={{ '--phase-color': phaseColor } as React.CSSProperties}>
       <div className="rail-drag" />
       <div className="rail-body">
-        <LiveSessionCard
-          sessions={sessions.filter(
-            (x) =>
-              !x.project ||
-              x.project === bundle.project.id ||
-              x.project.toLowerCase() === bundle.project.name.toLowerCase()
-          )}
-        />
+        <LiveSessionCard sessions={projectSessions} />
         <div className="step-figure">
           <span className="mini" style={{ color: phaseColor }}>
             Step {Math.min(currentIdx + 1, 6)} of 6
@@ -197,10 +197,14 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
         <div className="rail-divider" />
 
         <div className="next-step">
-          <span className="rail-mini-label">Your next step</span>
-          <h2>{phasePrompt.title}</h2>
-          <p className="how">{phasePrompt.forHumans}</p>
-          {phasePrompt.freshSession && (
+          <span className="rail-mini-label">{liveHere ? 'In progress' : 'Your next step'}</span>
+          <h2>{liveHere ? `${clientLabel(projectSessions[0].client)} is on it` : phasePrompt.title}</h2>
+          <p className="how">
+            {liveHere
+              ? 'The agent is filling this board right now — keep talking to it in its chat. The prompt below is only for starting a separate, fresh chat on the next step.'
+              : phasePrompt.forHumans}
+          </p>
+          {!liveHere && phasePrompt.freshSession && (
             <p className="fresh-note">
               Tip — open a brand-new chat for this step. A fresh pair of eyes gives better results.
             </p>

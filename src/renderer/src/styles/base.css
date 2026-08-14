@@ -2604,3 +2604,45 @@ a {
   color: var(--graphite);
   font-weight: 500;
 }
+
+/* Delete a project — appears on hover, asks once, never destroys (trash). */
+.side-item {
+  position: relative;
+  cursor: pointer;
+}
+
+.side-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--smoke);
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, width 0.2s var(--ease-spring);
+}
+
+.side-item:hover .side-delete,
+.side-delete.confirming {
+  opacity: 1;
+}
+
+.side-delete:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--ink);
+}
+
+.side-delete.confirming {
+  width: auto;
+  padding: 0 9px;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: #ffffff;
+  font-size: 10.5px;
+  font-weight: 600;
+}

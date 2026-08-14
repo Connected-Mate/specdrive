@@ -85,7 +85,7 @@ export function readWireframe(projectId: string, file: string): string {
 }
 
 const SESSIONS_DIR = path.join(DATA_DIR, 'sessions')
-const SESSION_FRESH_MS = 90_000
+const SESSION_FRESH_MS = 75_000
 
 export function listSessions(): import('../shared/types').LiveSession[] {
   let files: string[]
@@ -99,7 +99,8 @@ export function listSessions(): import('../shared/types').LiveSession[] {
     const p = path.join(SESSIONS_DIR, f)
     try {
       const s = JSON.parse(fs.readFileSync(p, 'utf8'))
-      if (Date.now() - new Date(s.lastToolAt).getTime() < SESSION_FRESH_MS) out.push(s)
+      const beat = s.heartbeatAt ?? s.lastToolAt
+      if (Date.now() - new Date(beat).getTime() < SESSION_FRESH_MS) out.push(s)
       else fs.unlinkSync(p)
     } catch {
       try {
