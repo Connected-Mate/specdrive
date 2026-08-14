@@ -8,6 +8,7 @@ import { KitWireframe } from '@/components/wireframe-kit/KitWireframe'
 import type { PlanWireframeNode } from '@/components/wireframe-kit/types'
 import { CursorScene } from '@/components/scene/CursorScene'
 import { PlanDoc } from '@/components/PlanDoc'
+import { SpecDetail } from '@/components/SpecDetail'
 import { timeAgo } from '@/lib/useLive'
 
 const CATEGORY_LABEL: Record<SpecCategory, string> = {
@@ -95,6 +96,7 @@ function BoardTab({
   freshIds: Set<string>
   projectName: string
 }): React.JSX.Element {
+  const [openSpec, setOpenSpec] = useState<Spec | null>(null)
   const groups = useMemo(() => {
     const byCat = new Map<SpecCategory, Spec[]>()
     for (const cat of SPEC_CATEGORIES) {
@@ -117,6 +119,11 @@ function BoardTab({
     )
   }
 
+  if (openSpec) {
+    const live = specs.find((x) => x.id === openSpec.id) ?? openSpec
+    return <SpecDetail spec={live} onClose={() => setOpenSpec(null)} />
+  }
+
   return (
     <div className="board">
       {[...groups.entries()].map(([cat, items]) => (
@@ -129,8 +136,14 @@ function BoardTab({
           {items.map((s, i) => (
             <div
               key={s.id}
-              className={`spec-card${freshIds.has(s.id) ? ' fresh' : ''}`}
+              role="button"
+              tabIndex={0}
+              className={`spec-card clickable${freshIds.has(s.id) ? ' fresh' : ''}`}
               style={{ '--i': i } as React.CSSProperties}
+              onClick={() => setOpenSpec(s)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setOpenSpec(s)
+              }}
             >
               <h4>{s.title}</h4>
               <div className="content-md">

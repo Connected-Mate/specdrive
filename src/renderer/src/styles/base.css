@@ -2646,3 +2646,176 @@ a {
   font-size: 10.5px;
   font-weight: 600;
 }
+
+/* ============ Spec detail — visual on the left, source on the right ============ */
+
+.spec-detail {
+  animation: pane-in 0.4s var(--ease-spring) both;
+  padding-top: 6px;
+}
+
+.spec-detail-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.spec-detail-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 18px;
+  align-items: start;
+}
+
+@media (max-width: 1180px) {
+  .spec-detail-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+.spec-detail-visual {
+  background: var(--paper);
+  border-radius: var(--radius-card-lg);
+  box-shadow: var(--glow-ring);
+  padding: 28px 30px;
+  user-select: text;
+}
+
+.spec-detail-visual h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 32px;
+  color: var(--ink);
+  line-height: 1.05;
+  margin-bottom: 14px;
+}
+
+.detail-section {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 19px;
+  color: var(--ink);
+  margin: 22px 0 10px;
+}
+
+.swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.swatch .chip {
+  height: 62px;
+  border-radius: 14px;
+  display: flex;
+  align-items: flex-end;
+  padding: 8px 10px;
+  font-size: 10.5px;
+  font-family: ui-monospace, 'SF Mono', monospace;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+.swatch .sname {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-top: 6px;
+  text-transform: capitalize;
+}
+
+.swatch .srole {
+  display: block;
+  font-size: 10.5px;
+  color: var(--smoke);
+  line-height: 1.35;
+  margin-top: 1px;
+}
+
+.size-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.size-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.size-row:first-child {
+  border-top: none;
+}
+
+.size-row .spx {
+  font-family: ui-monospace, 'SF Mono', monospace;
+  font-size: 12px;
+  color: var(--signal-blue);
+  width: 52px;
+  flex: none;
+}
+
+.size-row .slabel {
+  font-size: 12.5px;
+  color: var(--graphite);
+}
+
+/* The source pane — dark, DESIGN.md style */
+.spec-detail-source {
+  background: #16161a;
+  border-radius: var(--radius-card-lg);
+  overflow: hidden;
+  box-shadow: var(--glow-ring);
+  position: sticky;
+  top: 0;
+}
+
+.source-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.source-title {
+  font-family: ui-monospace, 'SF Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8e8e8;
+  letter-spacing: 0.04em;
+}
+
+.source-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #d6d6d6;
+}
+
+.source-btn:hover {
+  color: #ffffff;
+}
+
+.source-body {
+  margin: 0;
+  padding: 18px 20px 22px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: #c9ccd4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 560px;
+  overflow-y: auto;
+  user-select: text;
+}
+
+.spec-card.clickable {
+  cursor: pointer;
+}
+
+.spec-card.clickable:hover {
+  box-shadow: var(--glow-ring), 0 0 0 1px rgba(0, 0, 0, 0.1);
+}

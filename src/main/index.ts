@@ -50,6 +50,14 @@ function createWindow(): void {
           )
         }, 1200)
       }
+      const clickSel = process.env.SPECDRIVE_CLICK_SEL
+      if (clickSel) {
+        setTimeout(() => {
+          win?.webContents.executeJavaScript(
+            `document.querySelector(${JSON.stringify(clickSel)})?.click()`
+          )
+        }, 1400)
+      }
       const tab = process.env.SPECDRIVE_TAB
       if (tab) {
         setTimeout(() => {
