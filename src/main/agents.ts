@@ -9,10 +9,12 @@ import type { AgentId, DetectedAgent } from '../shared/types'
 const execFileP = promisify(execFile)
 const HOME = os.homedir()
 
-export function mcpServerPath(appPath: string, isPackaged: boolean): string {
+export function mcpServerPath(mainDir: string, isPackaged: boolean): string {
+  // Packaged: extraResources copies the bundled server to Resources/mcp.
+  // Unpackaged: main runs from <root>/out/main, the server source sits at <root>/mcp.
   return isPackaged
     ? path.join(process.resourcesPath, 'mcp', 'server.mjs')
-    : path.join(appPath, 'mcp', 'server.mjs')
+    : path.resolve(mainDir, '..', '..', 'mcp', 'server.mjs')
 }
 
 function exists(p: string): boolean {

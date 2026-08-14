@@ -31,8 +31,7 @@ export function Home({
 
   return (
     <div className="page">
-      {!hasProjects && (
-        <section className="hero">
+      <section className="hero">
           <div className="hero-copy">
             <h1>
               Your idea,
@@ -57,8 +56,7 @@ export function Home({
           <div className="hero-art">
             <img src="images/robot-dusk.png" alt="" />
           </div>
-        </section>
-      )}
+      </section>
 
       {!hasProjects && (
         <section className="section">

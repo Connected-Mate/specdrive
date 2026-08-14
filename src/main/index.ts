@@ -45,11 +45,21 @@ function createWindow(): void {
           await win!.webContents.executeJavaScript(`window.scrollTo(0, ${scroll})`)
           await new Promise((r) => setTimeout(r, 400))
         }
-        if (process.env.SPECDRIVE_DEBUG) {
+        if (process.env.SPECDRIVE_CLICK) {
           const dbg = await win!.webContents.executeJavaScript(
-            `(() => { const i = document.querySelector('.hero-art img'); if (!i) return 'no img'; const r = i.getBoundingClientRect(); return { nw: i.naturalWidth, complete: i.complete, src: i.currentSrc, rect: [r.x, r.y, r.width, r.height] } })()`
+            `(() => {
+              const target = ${JSON.stringify(process.env.SPECDRIVE_CLICK)};
+              const chips = [...document.querySelectorAll('.agent-chip')];
+              const chip = chips.find((c) => c.textContent.includes(target));
+              if (!chip) return 'chip not found: ' + chips.map((c) => c.textContent).join('|');
+              const btn = chip.querySelector('button');
+              if (!btn) return 'no button (already connected?): ' + chip.textContent;
+              btn.click();
+              return 'clicked ' + btn.textContent;
+            })()`
           )
-          console.log('DEBUG_WF', JSON.stringify(dbg))
+          console.log('DEBUG_CLICK', JSON.stringify(dbg))
+          await new Promise((r) => setTimeout(r, 2500))
         }
         const img = await win!.webContents.capturePage()
         const fs = await import('node:fs')
@@ -73,7 +83,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   ensureDataDirs()
-  const serverPath = mcpServerPath(app.getAppPath(), app.isPackaged)
+  const serverPath = mcpServerPath(__dirname, app.isPackaged)
 
   ipcMain.handle('projects:list', () => listBundles())
   ipcMain.handle('projects:get', (_e, id: string) => loadBundle(id))
