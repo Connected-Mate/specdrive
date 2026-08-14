@@ -66,6 +66,8 @@ export interface Task {
   specIds: string[]
   status: TaskStatus
   order: number
+  /** Parent task id — sub-steps nest under their parent in the plan */
+  parentId?: string
   /** Note the AI leaves when completing/blocking the task */
   note?: string
   createdAt: string

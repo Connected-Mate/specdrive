@@ -108,8 +108,75 @@ function BoardTab({
   )
 }
 
+function TaskRow({
+  task,
+  index,
+  sub,
+  childCount,
+  doneChildren,
+  collapsed,
+  onToggle
+}: {
+  task: ProjectBundle['tasks'][number]
+  index: number
+  sub?: boolean
+  childCount?: number
+  doneChildren?: number
+  collapsed?: boolean
+  onToggle?: () => void
+}): React.JSX.Element {
+  return (
+    <div
+      className={`task-row ${task.status.replace('_', '-')}${sub ? ' sub' : ''}`}
+      style={{ '--i': index } as React.CSSProperties}
+    >
+      <span className={`task-check ${task.status.replace('_', '-')}`}>
+        {task.status === 'done' && <TickIcon size={10} />}
+      </span>
+      <div className="body">
+        <div className="title-line">
+          <span className="title">{task.title}</span>
+          {childCount ? (
+            <button className="task-chevron" onClick={onToggle} aria-label="Toggle sub-steps">
+              <span className="badge">
+                {doneChildren}/{childCount}
+              </span>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 16 16"
+                fill="none"
+                style={{
+                  transform: collapsed ? 'rotate(-90deg)' : 'none',
+                  transition: 'transform 0.2s ease'
+                }}
+              >
+                <path
+                  d="M4 6.5 8 10.5 12 6.5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          ) : null}
+        </div>
+        {task.status !== 'done' && <div className="detail">{task.detail}</div>}
+        {task.note && <div className="note">{task.note}</div>}
+        {task.status === 'blocked' && (
+          <span className="badge" style={{ marginTop: 5 }}>
+            Blocked
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   const { tasks } = bundle
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   if (!tasks.length) {
     return (
       <div className="empty">
@@ -120,7 +187,18 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
     )
   }
   const done = tasks.filter((t) => t.status === 'done').length
-  const ordered = [...tasks].sort((a, b) => a.order - b.order)
+  const roots = tasks.filter((t) => !t.parentId).sort((a, b) => a.order - b.order)
+  const childrenOf = (id: string): typeof tasks =>
+    tasks.filter((t) => t.parentId === id).sort((a, b) => a.order - b.order)
+  const toggle = (id: string): void =>
+    setCollapsed((s) => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  let row = 0
   return (
     <div className="plan-wrap">
       <div className="progress-row">
@@ -131,27 +209,24 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
           {done}/{tasks.length} · {Math.round((done / tasks.length) * 100)}%
         </span>
       </div>
-      {ordered.map((t, i) => (
-        <div
-          key={t.id}
-          className={`task-row ${t.status.replace('_', '-')}`}
-          style={{ '--i': i } as React.CSSProperties}
-        >
-          <span className={`task-check ${t.status.replace('_', '-')}`}>
-            {t.status === 'done' && <TickIcon size={10} />}
-          </span>
-          <div className="body">
-            <div className="title">{t.title}</div>
-            {t.status !== 'done' && <div className="detail">{t.detail}</div>}
-            {t.note && <div className="note">{t.note}</div>}
-            {t.status === 'blocked' && (
-              <span className="badge" style={{ marginTop: 5 }}>
-                Blocked
-              </span>
-            )}
-          </div>
-        </div>
-      ))}
+      {roots.map((t) => {
+        const kids = childrenOf(t.id)
+        const isCollapsed = collapsed.has(t.id)
+        const doneKids = kids.filter((k) => k.status === 'done').length
+        return (
+          <React.Fragment key={t.id}>
+            <TaskRow
+              task={t}
+              index={row++}
+              childCount={kids.length || undefined}
+              doneChildren={doneKids}
+              collapsed={isCollapsed}
+              onToggle={() => toggle(t.id)}
+            />
+            {!isCollapsed && kids.map((k) => <TaskRow key={k.id} task={k} index={row++} sub />)}
+          </React.Fragment>
+        )
+      })}
     </div>
   )
 }
@@ -211,29 +286,31 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
             }}
           />
           <p className="flow-hint">
-            The map of your product — each arrow is something the user does. A blue dot means the
-            screen has a sketch: click it.
+            The map of your product — each arrow is something the user does. Click a screen to see
+            its sketch full size.
           </p>
         </>
       )}
-      <div className="wireframe-grid">
-        {bundle.wireframes.map((wf, i) => (
-          <button
-            key={wf.id}
-            className="wireframe-card"
-            style={{ '--i': i } as React.CSSProperties}
-            onClick={() => setOpen(open?.id === wf.id ? null : wf)}
-          >
-            <div className="wireframe-thumb">
-              <iframe sandbox="" title={wf.title} src={dataUrl(wf.id)} tabIndex={-1} />
-            </div>
-            <div className="label">
-              <div className="screen">{wf.screen}</div>
-              <div className="title">{wf.title}</div>
-            </div>
-          </button>
-        ))}
-      </div>
+      {!bundle.flow?.screens.length && (
+        <div className="wireframe-grid">
+          {bundle.wireframes.map((wf, i) => (
+            <button
+              key={wf.id}
+              className="wireframe-card"
+              style={{ '--i': i } as React.CSSProperties}
+              onClick={() => setOpen(open?.id === wf.id ? null : wf)}
+            >
+              <div className="wireframe-thumb">
+                <iframe sandbox="" title={wf.title} src={dataUrl(wf.id)} tabIndex={-1} />
+              </div>
+              <div className="label">
+                <div className="screen">{wf.screen}</div>
+                <div className="title">{wf.title}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
       {open && (
         <div className="wireframe-expanded">
           <div className="bar">

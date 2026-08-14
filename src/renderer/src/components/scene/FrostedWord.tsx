@@ -30,7 +30,7 @@ export function FrostedWord({ children }: { children: React.ReactNode }): React.
         </span>
         <span
           className="frosted-sharp"
-          style={mask('linear-gradient(186deg, black 0%, black 40%, transparent 100%)')}
+          style={mask('linear-gradient(186deg, black 0%, black 55%, transparent 108%)')}
         >
           {children}
         </span>

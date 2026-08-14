@@ -355,13 +355,22 @@ server.registerTool(
         .string()
         .describe('What to build and what "done" means (visible result or passing test). Plain words first.'),
       spec_ids: z.array(z.string()).optional().describe('Specs this task implements'),
-      order: z.number().int().optional().describe('Position in the plan; defaults to end')
+      order: z.number().int().optional().describe('Position in the plan; defaults to end'),
+      parent_task_id: z
+        .string()
+        .optional()
+        .describe('Nest this as a sub-step of an existing task (one level deep). Use for breaking a big step into smaller checkable pieces.')
     }
   },
-  async ({ project, title, detail, spec_ids, order }) => {
+  async ({ project, title, detail, spec_ids, order, parent_task_id }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
     const tasks = readJson(path.join(dir, 'tasks.json'), [])
+    if (parent_task_id) {
+      const parent = tasks.find((t) => t.id === parent_task_id)
+      if (!parent) return fail(`No task with id "${parent_task_id}" to nest under.`)
+      if (parent.parentId) return fail('Sub-steps only nest one level deep — pick a top-level task as parent.')
+    }
     const task = {
       id: uid(),
       title,
@@ -369,6 +378,7 @@ server.registerTool(
       specIds: spec_ids ?? [],
       status: 'todo',
       order: order ?? (tasks.length ? Math.max(...tasks.map((t) => t.order)) + 1 : 1),
+      parentId: parent_task_id,
       createdAt: now(),
       updatedAt: now()
     }
@@ -406,6 +416,14 @@ server.registerTool(
     }
     if (status === 'done' && !note) {
       return fail('A "done" task needs a note: one plain sentence describing what now works.')
+    }
+    if (status === 'done') {
+      const openChildren = tasks.filter((t) => t.parentId === task.id && t.status !== 'done')
+      if (openChildren.length) {
+        return fail(
+          `Task "${task.title}" still has ${openChildren.length} open sub-step(s): ${openChildren.map((t) => `"${t.title}"`).join(', ')}. Finish them first.`
+        )
+      }
     }
     task.status = status
     if (note !== undefined) task.note = note

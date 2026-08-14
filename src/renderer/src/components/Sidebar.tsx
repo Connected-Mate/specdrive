@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import type { DetectedAgent, ProjectBundle } from '@shared/types'
-import { StarIcon } from './Icons'
 import { useToast } from './Toast'
 import { PHASE_COLOR } from '@/lib/phaseColors'
 
@@ -35,10 +34,21 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-drag" />
       <button className="sidebar-brand" onClick={() => onSelect(null)}>
-        <span className="brand-orb">
-          <StarIcon />
+        <span className="brand-stamp">
+          SpecDrive
+          <span className="brand-cursor" aria-hidden>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.48 0 .72-.58.38-.92L5.94 2.47a.5.5 0 0 0-.44.74Z"
+                fill="#7b7ed8"
+                stroke="#fff"
+                strokeWidth="1.6"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="brand-cursor-pill">agents</span>
+          </span>
         </span>
-        <span className="wordmark">SpecDrive</span>
       </button>
 
       <div className="sidebar-label">Projects</div>

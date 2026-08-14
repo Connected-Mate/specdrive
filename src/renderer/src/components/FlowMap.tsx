@@ -1,14 +1,17 @@
 import React, { useMemo } from 'react'
 import type { Flow } from '@shared/types'
 
-// Hand-rolled screen-flow map: screens as nodes in left-to-right layers,
-// user actions as labeled arrows. No graph library — small, offline, ours.
+// The visual plan: screens as little device cards (wireframe inside, name
+// below), user actions as labeled arrows. Longest-path layering, left to
+// right, scaled to fit the pane — no graph library, no horizontal scroll.
 
-const NODE_W = 172
-const COL_GAP = 92
-const ROW_GAP = 26
-const PAD = 24
-const THUMB_H = 74
+const NODE_W = 190
+const THUMB_H = 118
+const LABEL_H = 52
+const NODE_H = THUMB_H + LABEL_H
+const COL_GAP = 110
+const ROW_GAP = 36
+const PAD = 34
 
 interface Node {
   id: string
@@ -20,16 +23,8 @@ interface Node {
   entry: boolean
 }
 
-function layout(
-  flow: Flow,
-  sketchScreens: Set<string>,
-  NODE_H: number
-): { nodes: Node[]; w: number; h: number } {
+function layout(flow: Flow, sketchScreens: Set<string>): { nodes: Node[]; w: number; h: number } {
   const ids = flow.screens.map((s) => s.id)
-  const incoming = new Map<string, number>(ids.map((id) => [id, 0]))
-  for (const l of flow.links) incoming.set(l.to, (incoming.get(l.to) ?? 0) + 1)
-
-  // Longest-path layering, bounded to avoid cycles spinning.
   const depth = new Map<string, number>(ids.map((id) => [id, 0]))
   for (let pass = 0; pass < ids.length; pass++) {
     let changed = false
@@ -84,19 +79,26 @@ export function FlowMap({
   thumbs: Record<string, string>
   onOpenScreen: (screenName: string) => void
 }): React.JSX.Element {
-  const anyThumb = flow.screens.some((s) => thumbs[s.name.toLowerCase()])
-  const NODE_H = anyThumb ? 64 + THUMB_H : 64
-  const { nodes, w, h } = useMemo(
-    () => layout(flow, sketchScreens, NODE_H),
-    [flow, sketchScreens, NODE_H]
-  )
+  const { nodes, w, h } = useMemo(() => layout(flow, sketchScreens), [flow, sketchScreens])
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
 
   return (
-    <div className="flowmap-scroll">
-      <svg className="flowmap" width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+    <div className="flowmap-card">
+      <svg
+        className="flowmap"
+        viewBox={`0 0 ${w} ${h}`}
+        style={{ width: '100%', minWidth: `${Math.round(w * 0.78)}px`, height: 'auto', display: 'block' }}
+      >
         <defs>
-          <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <marker
+            id="arrow"
+            viewBox="0 0 8 8"
+            refX="7"
+            refY="4"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
             <path d="M0.5 0.8 7 4 0.5 7.2Z" fill="#9a9a9a" />
           </marker>
         </defs>
@@ -107,55 +109,46 @@ export function FlowMap({
           const forward = b.x > a.x
           const x1 = forward ? a.x + NODE_W : a.x
           const y1 = a.y + NODE_H / 2
-          const x2 = forward ? b.x - 4 : b.x + NODE_W + 4
+          const x2 = forward ? b.x - 5 : b.x + NODE_W + 5
           const y2 = b.y + NODE_H / 2
-          const dx = Math.max(36, Math.abs(x2 - x1) / 2)
+          const dx = Math.max(40, Math.abs(x2 - x1) / 2)
           const c1x = forward ? x1 + dx : x1 - dx
           const c2x = forward ? x2 - dx : x2 + dx
           const mx = (x1 + x2) / 2
-          const my = (y1 + y2) / 2 - 9
+          const my = (y1 + y2) / 2 - 10
           const alt = Boolean(l.condition)
+          const txt = l.label ? (l.condition ? `${l.label} — ${l.condition}` : l.label) : l.condition
           return (
-            <g key={i} opacity={alt ? 0.75 : 1}>
+            <g key={i} opacity={alt ? 0.8 : 1}>
               <path
                 d={`M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`}
                 fill="none"
-                stroke="#c9c9c9"
-                strokeWidth="1.5"
-                strokeDasharray={alt ? '5 4' : undefined}
+                stroke="#c4c4c4"
+                strokeWidth="1.6"
+                strokeDasharray={alt ? '6 5' : undefined}
                 markerEnd="url(#arrow)"
               />
-              {alt && !l.label && (
-                <text x={mx} y={my + 3} textAnchor="middle" className="flow-label flow-cond">
-                  {l.condition}
-                </text>
+              {txt && (
+                <g>
+                  <rect
+                    x={mx - txt.length * 3.1 - 8}
+                    y={my - 10}
+                    width={txt.length * 6.2 + 16}
+                    height={19}
+                    rx={9.5}
+                    fill="#ffffff"
+                    stroke="rgba(0,0,0,0.08)"
+                  />
+                  <text x={mx} y={my + 3.5} textAnchor="middle" className="flow-label">
+                    {txt}
+                  </text>
+                </g>
               )}
-              {l.label &&
-                (() => {
-                  const txt = l.condition ? `${l.label} — ${l.condition}` : l.label
-                  return (
-                    <g>
-                      <rect
-                        x={mx - txt.length * 2.9 - 7}
-                        y={my - 9}
-                        width={txt.length * 5.8 + 14}
-                        height={17}
-                        rx={8.5}
-                        fill="#f7f7f7"
-                        stroke="rgba(0,0,0,0.07)"
-                      />
-                      <text x={mx} y={my + 3} textAnchor="middle" className="flow-label">
-                        {txt}
-                      </text>
-                    </g>
-                  )
-                })()}
             </g>
           )
         })}
         {nodes.map((n, i) => {
           const thumb = thumbs[n.name.toLowerCase()]
-          const textTop = thumb ? THUMB_H : 0
           return (
             <g
               key={n.id}
@@ -167,55 +160,67 @@ export function FlowMap({
               <rect
                 width={NODE_W}
                 height={NODE_H}
-                rx={16}
+                rx={18}
                 className={`flow-node-bg${n.entry ? ' entry' : ''}`}
               />
+              <clipPath id={`thumb-${n.id}`}>
+                <path
+                  d={`M 0 18 Q 0 0 18 0 L ${NODE_W - 18} 0 Q ${NODE_W} 0 ${NODE_W} 18 L ${NODE_W} ${THUMB_H} L 0 ${THUMB_H} Z`}
+                />
+              </clipPath>
+              <g clipPath={`url(#thumb-${n.id})`}>
+                {thumb ? (
+                  <foreignObject width={NODE_W} height={THUMB_H}>
+                    <iframe
+                      sandbox=""
+                      src={thumb}
+                      tabIndex={-1}
+                      style={{
+                        width: NODE_W * 2.2,
+                        height: THUMB_H * 2.2 + 120,
+                        transform: 'scale(0.455)',
+                        transformOrigin: 'top left',
+                        border: 'none',
+                        background: '#fff',
+                        pointerEvents: 'none'
+                      }}
+                    />
+                  </foreignObject>
+                ) : (
+                  <>
+                    <rect width={NODE_W} height={THUMB_H} fill="#fafafa" />
+                    <text
+                      x={NODE_W / 2}
+                      y={THUMB_H / 2 + 4}
+                      textAnchor="middle"
+                      className="flow-placeholder"
+                    >
+                      sketch coming
+                    </text>
+                  </>
+                )}
+                <rect
+                  width={NODE_W}
+                  height={THUMB_H}
+                  fill="transparent"
+                  stroke="rgba(0,0,0,0.06)"
+                />
+              </g>
+              <text x={16} y={THUMB_H + (n.purpose ? 25 : 32)} className="flow-name">
+                {n.name.length > 22 ? n.name.slice(0, 21) + '…' : n.name}
+              </text>
+              {n.purpose && (
+                <text x={16} y={THUMB_H + 42} className="flow-purpose">
+                  {n.purpose.length > 30 ? n.purpose.slice(0, 29) + '…' : n.purpose}
+                </text>
+              )}
               {n.entry && (
-                <g transform={`translate(10, 10)`}>
-                  <rect width={40} height={17} rx={8.5} fill="#007aff" />
-                  <text x={20} y={12} textAnchor="middle" className="flow-start-badge">
+                <g transform={`translate(${NODE_W - 52}, 12)`}>
+                  <rect width={40} height={18} rx={9} fill="#007aff" />
+                  <text x={20} y={12.5} textAnchor="middle" className="flow-start-badge">
                     Start
                   </text>
                 </g>
-              )}
-              {thumb && (
-                <>
-                  <clipPath id={`thumb-${n.id}`}>
-                    <path
-                      d={`M 0 16 Q 0 0 16 0 L ${NODE_W - 16} 0 Q ${NODE_W} 0 ${NODE_W} 16 L ${NODE_W} ${THUMB_H} L 0 ${THUMB_H} Z`}
-                    />
-                  </clipPath>
-                  <g clipPath={`url(#thumb-${n.id})`}>
-                    <foreignObject width={NODE_W} height={THUMB_H}>
-                      <iframe
-                        sandbox=""
-                        src={thumb}
-                        tabIndex={-1}
-                        style={{
-                          width: NODE_W * 2.6,
-                          height: THUMB_H * 2.6 + 90,
-                          transform: 'scale(0.385)',
-                          transformOrigin: 'top left',
-                          border: 'none',
-                          background: '#fff',
-                          pointerEvents: 'none'
-                        }}
-                      />
-                    </foreignObject>
-                    <rect width={NODE_W} height={THUMB_H} fill="transparent" stroke="rgba(0,0,0,0.06)" />
-                  </g>
-                </>
-              )}
-              <text x={16} y={textTop + (n.purpose ? 27 : 37)} className="flow-name">
-                {n.name.length > 20 ? n.name.slice(0, 19) + '…' : n.name}
-              </text>
-              {n.purpose && (
-                <text x={16} y={textTop + 45} className="flow-purpose">
-                  {n.purpose.length > 26 ? n.purpose.slice(0, 25) + '…' : n.purpose}
-                </text>
-              )}
-              {n.hasSketch && (
-                <circle cx={NODE_W - 14} cy={textTop + 14} r={3.5} className="flow-sketch-dot" />
               )}
             </g>
           )

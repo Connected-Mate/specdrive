@@ -139,10 +139,60 @@ a {
   color: var(--ink);
 }
 
-.sidebar-brand .wordmark {
+/* The stamped-glass logo, miniature */
+.brand-stamp {
+  position: relative;
+  display: inline-block;
   font-family: var(--font-display);
-  font-size: 20px;
-  letter-spacing: 0.005em;
+  font-size: 19px;
+  line-height: 1.2;
+  color: var(--ink);
+  padding: 3px 12px 4px;
+  transform: rotate(-1deg);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.6) 0%,
+    rgba(255, 255, 255, 0.2) 45%,
+    rgba(255, 255, 255, 0.4) 100%
+  );
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-top-color: rgba(255, 255, 255, 0.85);
+  border-radius: 9px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 3px 8px rgba(12, 38, 77, 0.06);
+  transition: transform 0.25s var(--ease-spring);
+}
+
+.sidebar-brand:hover .brand-stamp {
+  transform: rotate(0deg);
+}
+
+.brand-cursor {
+  position: absolute;
+  right: -14px;
+  bottom: -9px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+.brand-cursor-pill {
+  margin-left: 8px;
+  margin-top: -2px;
+  font-family: var(--font-ui);
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  background: #7b7ed8;
+  border-radius: 6px;
+  border-top-left-radius: 2px;
+  padding: 1.5px 5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .brand-orb {
@@ -454,7 +504,7 @@ a {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: -4px;
+  margin-top: 8px;
 }
 
 .step-figure .mini {
@@ -921,14 +971,18 @@ a {
   display: inline-block;
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: clamp(48px, 7vw, 92px);
-  line-height: 1.05;
+  font-size: clamp(44px, 6.2vw, 84px);
+  line-height: 1.16;
   color: var(--ink);
   letter-spacing: 0.005em;
 }
 
 .cursor-scene.compact .frosted-word {
-  font-size: clamp(34px, 4.5vw, 56px);
+  font-size: clamp(30px, 4vw, 50px);
+}
+
+.cursor-scene-word {
+  padding-bottom: 3%;
 }
 
 .frosted-halo {
@@ -970,7 +1024,7 @@ a {
 .frosted-chip {
   pointer-events: none;
   position: absolute;
-  inset: -10px -22px;
+  inset: -14px -24px;
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.42) 0%,
@@ -994,7 +1048,7 @@ a {
 .frosted-chip-sheen {
   pointer-events: none;
   position: absolute;
-  inset: -10px -22px;
+  inset: -14px -24px;
   border-radius: 18px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.7), transparent 12%);
   mix-blend-mode: overlay;
@@ -1311,10 +1365,55 @@ a {
   }
 }
 
+.task-row.sub {
+  margin-left: 32px;
+  position: relative;
+  border-top-style: dashed;
+}
+
+.task-row.sub::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--hairline);
+}
+
+.task-row.sub .task-check {
+  width: 16px;
+  height: 16px;
+}
+
+.task-row.sub .title {
+  font-size: 12.5px;
+}
+
 .task-row .body {
   flex: 1;
   min-width: 0;
   user-select: text;
+}
+
+.task-row .title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-chevron {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--smoke);
+  padding: 2px 4px;
+  border-radius: 8px;
+}
+
+.task-chevron:hover {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .task-row .title {
@@ -1343,18 +1442,16 @@ a {
 
 /* ============ Flow map ============ */
 
-.flowmap-scroll {
-  overflow-x: auto;
-  background: var(--paper);
+.flowmap-card {
+  background:
+    radial-gradient(rgba(0, 0, 0, 0.045) 1px, transparent 1px) 0 0 / 22px 22px,
+    var(--paper);
   border-radius: var(--radius-card);
   box-shadow: var(--glow-ring-thin);
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  padding: 4px;
+  overflow-x: auto;
   animation: pane-in 0.45s var(--ease-spring) both;
-}
-
-.flowmap {
-  display: block;
-  min-width: 100%;
 }
 
 /* Opacity only — a transform animation would clobber the SVG translate attribute */
@@ -1381,6 +1478,15 @@ a {
   stroke: rgba(0, 0, 0, 0.12);
   stroke-width: 1.2;
   transition: stroke 0.2s ease;
+  filter: drop-shadow(0 2px 6px rgba(12, 38, 77, 0.08));
+}
+
+.flow-placeholder {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-style: italic;
+  fill: #b5b5b5;
+  letter-spacing: -0.01em;
 }
 
 .flow-node:hover .flow-node-bg {
@@ -1389,7 +1495,7 @@ a {
 
 .flow-name {
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   fill: var(--ink);
   letter-spacing: -0.02em;
@@ -1397,14 +1503,14 @@ a {
 
 .flow-purpose {
   font-family: var(--font-ui);
-  font-size: 10.5px;
+  font-size: 11px;
   fill: var(--smoke);
   letter-spacing: -0.01em;
 }
 
 .flow-label {
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 500;
   fill: var(--graphite);
   letter-spacing: -0.01em;
