@@ -75,7 +75,7 @@ export function readWireframe(projectId: string, file: string): string {
   // Defensive: never allow escaping the wireframes dir.
   const pid = safeId(projectId)
   const safe = path.basename(file)
-  if (!pid || !/^[a-z0-9]+\.html$/.test(safe)) return '<p>Wireframe not found.</p>'
+  if (!pid || !/^[a-z0-9]+\.(html|json)$/.test(safe)) return '<p>Wireframe not found.</p>'
   try {
     return fs.readFileSync(path.join(PROJECTS_DIR, pid, 'wireframes', safe), 'utf8')
   } catch {

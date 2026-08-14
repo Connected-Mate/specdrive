@@ -537,16 +537,54 @@ server.registerTool(
       project: z.string(),
       screen: z.string().max(60).describe('Which screen this is, e.g. "Home", "Checkout"'),
       title: z.string().max(80),
+      nodes: z
+        .array(z.record(z.string(), z.any()))
+        .max(40)
+        .optional()
+        .describe(
+          'PREFERRED: a semantic kit tree, hand-drawn rendering handled by the app. Each node: {el, ...props, children?}. els: screen, statusBar, browserBar, toolbar, row, col, sidebar, navItem, main, title, text, lines, section, taskRow, chips, chip, pill, check, field, btn, fab, card, column, avatar, iconSquare, kv, searchBar, box, divider. Props are semantic only (text, label, tone: default|accent|warn|ok|muted, active, n, widths, items:[{label,active}], rows:[{k,v}]) — NO geometry, NO css. Start with one {el:"screen"} root (lead with statusBar for mobile or browserBar for web).'
+        ),
       html: z
         .string()
         .max(120000)
-        .describe('Complete self-contained HTML document. Grayscale boxes + labels. No scripts, no external URLs.')
+        .optional()
+        .describe('Legacy fallback only if you cannot emit a kit tree: self-contained HTML, no scripts.')
     }
   },
-  async ({ project, screen, title, html }) => {
+  async ({ project, screen, title, nodes, html }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
+    if (!nodes && !html) return fail('Provide nodes (preferred kit tree) or html.')
     const wid = uid()
+    if (nodes) {
+      const KIT_ELS = new Set(['screen','browserBar','statusBar','toolbar','row','col','sidebar','navItem','main','title','text','lines','section','taskRow','chips','chip','pill','check','field','btn','fab','card','column','avatar','iconSquare','kv','searchBar','box','divider'])
+      let count = 0
+      const check = (list, depth) => {
+        if (depth > 8) throw new Error('Kit tree too deep (max 8 levels).')
+        for (const node of list) {
+          count++
+          if (count > 150) throw new Error('Kit tree too large (max 150 nodes).')
+          if (typeof node.el !== 'string' || !KIT_ELS.has(node.el)) {
+            throw new Error(`Unknown kit element "${node.el}". Allowed: ${[...KIT_ELS].join(', ')}`)
+          }
+          if (node.children) check(node.children, depth + 1)
+        }
+      }
+      try {
+        check(nodes, 1)
+      } catch (e) {
+        return fail(e.message)
+      }
+      const file = `${wid}.json`
+      fs.mkdirSync(path.join(dir, 'wireframes'), { recursive: true })
+      fs.writeFileSync(path.join(dir, 'wireframes', file), JSON.stringify(nodes, null, 2))
+      updateJson(path.join(dir, 'wireframes.json'), [], (wfs) => {
+        wfs.push({ id: wid, screen, title, file, kind: 'kit', createdAt: now() })
+      })
+      touchProject(id)
+      logActivity(id, 'agent', 'add_wireframe', `Wireframe added: "${screen}" — ${title}`)
+      return ok(`Wireframe "${screen}" saved (kit tree, ${count} nodes). The owner sees it hand-drawn.`)
+    }
     const file = `${wid}.html`
     // Strip scripts defensively — wireframes are sketches, not apps.
     const stripped = html
@@ -561,7 +599,7 @@ server.registerTool(
     fs.mkdirSync(path.join(dir, 'wireframes'), { recursive: true })
     fs.writeFileSync(path.join(dir, 'wireframes', file), safe)
     updateJson(path.join(dir, 'wireframes.json'), [], (wfs) => {
-      wfs.push({ id: wid, screen, title, file, createdAt: now() })
+      wfs.push({ id: wid, screen, title, file, kind: 'html', createdAt: now() })
     })
     touchProject(id)
     logActivity(id, 'agent', 'add_wireframe', `Wireframe added: "${screen}" — ${title}`)

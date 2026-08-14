@@ -1,5 +1,11 @@
 import React, { useMemo } from 'react'
 import type { Flow } from '@shared/types'
+import { KitWireframe } from './wireframe-kit/KitWireframe'
+import type { PlanWireframeNode } from './wireframe-kit/types'
+
+export type FlowThumb =
+  | { kind: 'html'; url: string }
+  | { kind: 'kit'; nodes: PlanWireframeNode[] }
 
 // The visual plan: screens as little device cards (wireframe inside, name
 // below), user actions as labeled arrows. Longest-path layering, left to
@@ -75,8 +81,8 @@ export function FlowMap({
 }: {
   flow: Flow
   sketchScreens: Set<string>
-  /** screen name (lowercase) → data-url of its wireframe, for in-node thumbnails */
-  thumbs: Record<string, string>
+  /** screen name (lowercase) → wireframe thumb (kit tree or legacy html url) */
+  thumbs: Record<string, FlowThumb>
   onOpenScreen: (screenName: string) => void
 }): React.JSX.Element {
   const { nodes, w, h } = useMemo(() => layout(flow, sketchScreens), [flow, sketchScreens])
@@ -178,20 +184,39 @@ export function FlowMap({
               <g clipPath={`url(#thumb-${n.id})`}>
                 {thumb ? (
                   <foreignObject width={NODE_W} height={THUMB_H}>
-                    <iframe
-                      sandbox=""
-                      src={thumb}
-                      tabIndex={-1}
-                      style={{
-                        width: NODE_W * 2.2,
-                        height: THUMB_H * 2.2 + 120,
-                        transform: 'scale(0.455)',
-                        transformOrigin: 'top left',
-                        border: 'none',
-                        background: '#fff',
-                        pointerEvents: 'none'
-                      }}
-                    />
+                    {thumb.kind === 'kit' ? (
+                      <div
+                        style={{
+                          width: NODE_W * 1.8,
+                          height: THUMB_H * 1.8,
+                          transform: 'scale(0.5555)',
+                          transformOrigin: 'top left',
+                          background: '#fff',
+                          pointerEvents: 'none',
+                          overflow: 'hidden'
+                        }}
+                      >
+                        {/* Lay content out at natural height, crop the bottom. */}
+                        <div style={{ width: '100%', padding: 6 }}>
+                          <KitWireframe nodes={thumb.nodes} density="compact" fill={false} />
+                        </div>
+                      </div>
+                    ) : (
+                      <iframe
+                        sandbox=""
+                        src={thumb.url}
+                        tabIndex={-1}
+                        style={{
+                          width: NODE_W * 2.2,
+                          height: THUMB_H * 2.2 + 120,
+                          transform: 'scale(0.455)',
+                          transformOrigin: 'top left',
+                          border: 'none',
+                          background: '#fff',
+                          pointerEvents: 'none'
+                        }}
+                      />
+                    )}
                   </foreignObject>
                 ) : (
                   <>

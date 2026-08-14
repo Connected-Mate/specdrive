@@ -3,7 +3,9 @@ import type { ProjectBundle, Spec, SpecCategory, Wireframe } from '@shared/types
 import { SPEC_CATEGORIES } from '@shared/types'
 import { Markdown } from '@/lib/markdown'
 import { TickIcon } from '@/components/Icons'
-import { FlowMap } from '@/components/FlowMap'
+import { FlowMap, type FlowThumb } from '@/components/FlowMap'
+import { KitWireframe } from '@/components/wireframe-kit/KitWireframe'
+import type { PlanWireframeNode } from '@/components/wireframe-kit/types'
 import { CursorScene } from '@/components/scene/CursorScene'
 import { PlanDoc } from '@/components/PlanDoc'
 import { timeAgo } from '@/lib/useLive'
@@ -337,6 +339,31 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
 
   const dataUrl = (id: string): string | undefined => dataUrls[id]
 
+  const kitNodes = useMemo(() => {
+    const map: Record<string, PlanWireframeNode[]> = {}
+    for (const wf of bundle.wireframes) {
+      if ((wf.kind === 'kit' || wf.file.endsWith('.json')) && docs[wf.id]) {
+        try {
+          map[wf.id] = JSON.parse(docs[wf.id]) as PlanWireframeNode[]
+        } catch {
+          // corrupt tree — skip
+        }
+      }
+    }
+    return map
+  }, [bundle.wireframes, docs])
+
+  const thumbs = useMemo(() => {
+    const map: Record<string, FlowThumb> = {}
+    for (const wf of bundle.wireframes) {
+      const key = wf.screen.toLowerCase()
+      if (kitNodes[wf.id]) map[key] = { kind: 'kit', nodes: kitNodes[wf.id] }
+      else if (dataUrls[wf.id] && !wf.file.endsWith('.json'))
+        map[key] = { kind: 'html', url: dataUrls[wf.id] }
+    }
+    return map
+  }, [bundle.wireframes, kitNodes, dataUrls])
+
   return (
     <>
       {bundle.flow && bundle.flow.screens.length > 0 && (
@@ -344,11 +371,7 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
           <FlowMap
             flow={bundle.flow}
             sketchScreens={sketchScreens}
-            thumbs={Object.fromEntries(
-              bundle.wireframes
-                .filter((w) => dataUrls[w.id])
-                .map((w) => [w.screen.toLowerCase(), dataUrls[w.id]])
-            )}
+            thumbs={thumbs}
             onOpenScreen={(name) => {
               const wf = bundle.wireframes.find(
                 (w) => w.screen.toLowerCase() === name.toLowerCase()
@@ -364,22 +387,39 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
       )}
       {!bundle.flow?.screens.length && (
         <div className="wireframe-grid">
-          {bundle.wireframes.map((wf, i) => (
-            <button
-              key={wf.id}
-              className="wireframe-card"
-              style={{ '--i': i } as React.CSSProperties}
-              onClick={() => setOpen(open?.id === wf.id ? null : wf)}
-            >
-              <div className="wireframe-thumb">
-                <iframe sandbox="" title={wf.title} src={dataUrl(wf.id)} tabIndex={-1} />
-              </div>
-              <div className="label">
-                <div className="screen">{wf.screen}</div>
-                <div className="title">{wf.title}</div>
-              </div>
-            </button>
-          ))}
+          {bundle.wireframes.map((wf, i) =>
+            kitNodes[wf.id] ? (
+              <button
+                key={wf.id}
+                className="kit-artboard"
+                style={{ '--i': i, textAlign: 'left', padding: 0 } as React.CSSProperties}
+                onClick={() => setOpen(open?.id === wf.id ? null : wf)}
+              >
+                <div className="frame">
+                  <KitWireframe nodes={kitNodes[wf.id]} density="compact" />
+                </div>
+                <div className="label">
+                  <div className="screen">{wf.screen}</div>
+                  <div className="title">{wf.title}</div>
+                </div>
+              </button>
+            ) : (
+              <button
+                key={wf.id}
+                className="wireframe-card"
+                style={{ '--i': i } as React.CSSProperties}
+                onClick={() => setOpen(open?.id === wf.id ? null : wf)}
+              >
+                <div className="wireframe-thumb">
+                  <iframe sandbox="" title={wf.title} src={dataUrl(wf.id)} tabIndex={-1} />
+                </div>
+                <div className="label">
+                  <div className="screen">{wf.screen}</div>
+                  <div className="title">{wf.title}</div>
+                </div>
+              </button>
+            )
+          )}
         </div>
       )}
       {open && (
@@ -392,7 +432,13 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
               Close
             </button>
           </div>
-          <iframe sandbox="" title={open.title} src={dataUrl(open.id)} />
+          {kitNodes[open.id] ? (
+            <div className="kit-expanded">
+              <KitWireframe nodes={kitNodes[open.id]} />
+            </div>
+          ) : (
+            <iframe sandbox="" title={open.title} src={dataUrl(open.id)} />
+          )}
         </div>
       )}
     </>

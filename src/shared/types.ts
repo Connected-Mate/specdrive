@@ -81,6 +81,8 @@ export interface Wireframe {
   title: string
   /** Relative filename inside the project's wireframes/ dir */
   file: string
+  /** 'kit' = agent-native kit tree (JSON); 'html' = legacy raw HTML sketch */
+  kind?: 'html' | 'kit'
   createdAt: string
 }
 
