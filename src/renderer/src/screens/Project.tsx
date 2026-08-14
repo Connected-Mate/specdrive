@@ -4,6 +4,7 @@ import { SPEC_CATEGORIES } from '@shared/types'
 import { Markdown } from '@/lib/markdown'
 import { TickIcon } from '@/components/Icons'
 import { FlowMap } from '@/components/FlowMap'
+import { CursorScene } from '@/components/scene/CursorScene'
 import { timeAgo } from '@/lib/useLive'
 
 const CATEGORY_LABEL: Record<SpecCategory, string> = {
@@ -26,7 +27,15 @@ const STATUS_LABEL: Record<Spec['status'], string> = {
 
 type Tab = 'board' | 'plan' | 'sketches' | 'activity'
 
-function BoardTab({ specs, freshIds }: { specs: Spec[]; freshIds: Set<string> }): React.JSX.Element {
+function BoardTab({
+  specs,
+  freshIds,
+  projectName
+}: {
+  specs: Spec[]
+  freshIds: Set<string>
+  projectName: string
+}): React.JSX.Element {
   const groups = useMemo(() => {
     const byCat = new Map<SpecCategory, Spec[]>()
     for (const cat of SPEC_CATEGORIES) {
@@ -38,10 +47,13 @@ function BoardTab({ specs, freshIds }: { specs: Spec[]; freshIds: Set<string> })
 
   if (!specs.length) {
     return (
-      <div className="empty">
-        <div className="art">The board is listening…</div>
-        As you talk with your AI agent, everything it learns lands here —<br />
-        each card one piece of your project’s memory.
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, height: '100%' }}>
+        <CursorScene word={projectName} compact />
+        <p className="empty" style={{ padding: '8px 24px' }}>
+          The board is listening — as you talk with your AI agent,
+          <br />
+          everything it learns lands here, live.
+        </p>
       </div>
     )
   }
@@ -329,7 +341,9 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
         </div>
       </div>
       <div className="content-body">
-        {tab === 'board' && <BoardTab specs={specs} freshIds={freshIds} />}
+        {tab === 'board' && (
+          <BoardTab specs={specs} freshIds={freshIds} projectName={project.name} />
+        )}
         {tab === 'plan' && <PlanTab bundle={bundle} />}
         {tab === 'sketches' && <SketchesTab bundle={bundle} />}
         {tab === 'activity' && <ActivityTab bundle={bundle} />}

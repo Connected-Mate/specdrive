@@ -1,27 +1,11 @@
 import React from 'react'
+import { CursorScene } from '@/components/scene/CursorScene'
 
-/** Main pane when no project is selected — one atmospheric moment, no scroll. */
+/** Main pane when no project is selected — the multiplayer moment, no scroll. */
 export function Welcome(): React.JSX.Element {
   return (
     <div className="welcome">
-      <div className="welcome-hero">
-        <div className="art">
-          <img src="images/robot-dusk.png" alt="" />
-        </div>
-        <div className="copy">
-          <span className="kicker">Spec-driven, for everyone</span>
-          <h1>
-            Your idea,
-            <br />
-            built properly.
-          </h1>
-          <p>
-            Describe what you want to build — no tech skills needed. Your AI agent fills this space
-            with a real plan, challenges it, researches it, then builds it step by step. You watch
-            it all happen, live.
-          </p>
-        </div>
-      </div>
+      <CursorScene word="SpecDrive" />
       <div className="welcome-steps">
         <div className="wstep">
           <span className="num">1</span>
