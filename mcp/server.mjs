@@ -29,7 +29,7 @@ const CATEGORIES = [
 
 const PHASE_GUIDE = {
   capture:
-    'CAPTURE: interview the owner about their idea (one simple question at a time, no jargon). After each answer, immediately add_spec so the board fills live. When complete, set_phase to "challenge".',
+    'CAPTURE: understand the owner\'s idea — follow their lead, this is a conversation, not a questionnaire. If they ask you to research something, do it NOW (web search, real pages) and add_spec the findings (category "research"). Never ask what the web or the board can answer; ask only what only the owner knows (taste, priorities, constraints), one short question at a time with your recommended answer first. add_spec everything the moment you learn it. When complete, set_phase to "challenge".',
   challenge:
     'CHALLENGE: act as a fresh, skeptical reviewer. Find contradictions, vagueness, missing essentials, oversized scope. Fix via update_spec (status "challenged" + challenge_note) or add_spec. Write 4-8 usage scenarios with add_scenario (happy paths AND unhappy paths), walk each against the specs, record gaps with update_scenario and close them. Record v1 cuts as a "decisions" spec. Then set_phase to "research".',
   research:
@@ -325,7 +325,7 @@ server.registerTool(
         Object.entries(PHASE_GUIDE)
           .map(([p, g]) => `• ${p}: ${g}`)
           .join('\n') +
-        `\n\nGround rules:\n- The board is the single source of truth; write EVERYTHING you learn or decide into it immediately (small focused specs, one topic each).\n- Talk to the owner in plain words, never jargon; one question at a time.\n- Never invent progress: only mark tasks done after verifying they work.` +
+        `\n\nGround rules:\n- The board is the single source of truth; write EVERYTHING you learn or decide into it immediately (small focused specs, one topic each).\n- Follow the owner\'s lead: if they ask you to research, compare or check something, do it right away and write the findings to the board — do not push on with your own question list.\n- Never ask the owner a question the web or the board can answer; ask only what only they can know, one short question at a time, your recommended answer first.\n- Talk to the owner in plain words, never jargon.\n- Never invent progress: only mark tasks done after verifying they work.` +
         current
     )
   }

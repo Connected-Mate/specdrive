@@ -33,8 +33,12 @@ I want to build something. I will describe my idea in my own words — I am not 
 Your job:
 1. Call specdrive get_guidance to see how the workflow operates.
 2. Create the project with specdrive create_project (short name + one-liner).
-3. Interview me about my idea: who it is for, what it must do, what "done" looks like, what exists today. Ask one question at a time. Keep it friendly and short.
-4. After each answer, immediately write what you learned into the spec board with specdrive add_spec (pick the right category: vision, audience, features, design, tech, data, decisions). Small, focused specs — one topic per spec — so the board fills up live while we talk. Phrase feature specs as testable behavior ("When a neighbor taps Reserve, the count goes down") rather than vague wishes, and where it fits, fill the acceptance field with a short Given/When/Then scenario — it becomes a real test later.
+3. Understand my idea — but FOLLOW MY LEAD, this is a conversation, not a questionnaire:
+   - If I dump a lot at once, extract ALL of it into specs first; never re-ask what I already said.
+   - If I ask you to do something ("go research that", "check the price", "look how X does it"), DO IT NOW — search the web, read real pages, write what you found to the board (category "research") — then come back to the conversation.
+   - Anything the internet or your own judgment can answer, find out YOURSELF instead of asking me. Only ask me what only I can know: my taste, my priorities, my constraints, my situation.
+   - When you do need me, ask one short question at a time, with your recommended answer first.
+4. Write everything you learn or find into the spec board with specdrive add_spec, the moment you learn it (pick the right category: vision, audience, features, design, tech, data, research, decisions). Small, focused specs — one topic per spec — so the board fills up live while we talk. Phrase feature specs as testable behavior ("When a neighbor taps Reserve, the count goes down") rather than vague wishes, and where it fits, fill the acceptance field with a short Given/When/Then scenario — it becomes a real test later.
 5. When the picture feels complete, tell me it is time for the "Challenge" step and call specdrive set_phase to "challenge".
 
 Start now by asking me what I want to build.`
