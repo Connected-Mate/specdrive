@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import type { DetectedAgent, ProjectBundle } from '@shared/types'
 import { PlaneIcon } from './Icons'
 import { useToast } from './Toast'
+import { PHASE_COLOR } from '@/lib/phaseColors'
 
 const PHASE_SHORT: Record<string, string> = {
   capture: 'Capturing idea',
@@ -52,7 +53,10 @@ export function Sidebar({
             >
               <span className="name">{b.project.name}</span>
               <span className="sub">
-                <span className="phase-dot" />
+                <span
+                  className="phase-dot"
+                  style={{ '--phase-color': PHASE_COLOR[b.project.phase] } as React.CSSProperties}
+                />
                 {PHASE_SHORT[b.project.phase]}
                 {b.tasks.length > 0 && ` · ${done}/${b.tasks.length}`}
               </span>

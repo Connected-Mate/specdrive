@@ -4,6 +4,7 @@ import { PHASES } from '@shared/types'
 import { DEEP_DIVE_PROMPT, PHASE_PROMPTS, START_PROMPT, fillPrompt } from '@shared/prompts'
 import { CopyIcon, TickIcon } from './Icons'
 import { useToast } from './Toast'
+import { PHASE_COLOR } from '@/lib/phaseColors'
 
 const PHASE_LABEL: Record<string, string> = {
   capture: 'Idea',
@@ -22,11 +23,10 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
   if (!bundle) {
     return (
       <aside className="rail">
-        <div className="rail-drag">
-          <span className="rail-mini-label">Start here</span>
-        </div>
+        <div className="rail-drag" />
         <div className="rail-body">
           <div className="next-step">
+            <span className="rail-mini-label">Start here</span>
             <h2>Tell your idea</h2>
             <p className="how">
               Copy this prompt, paste it into a connected AI agent (Claude Code, Cursor…), and
@@ -54,22 +54,36 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
   const phasePrompt = PHASE_PROMPTS.find((p) => p.phase === project.phase) ?? PHASE_PROMPTS[0]
   const currentIdx = PHASES.indexOf(project.phase)
   const deepDives = specs.filter((s) => s.category === 'risks' && (s.difficulty ?? 0) >= 4)
+  const phaseColor = PHASE_COLOR[project.phase]
 
   return (
-    <aside className="rail">
-      <div className="rail-drag">
-        <span className="rail-mini-label">
-          Step {Math.min(currentIdx + 1, 6)} of 6
-        </span>
-      </div>
+    <aside className="rail" style={{ '--phase-color': phaseColor } as React.CSSProperties}>
+      <div className="rail-drag" />
       <div className="rail-body">
+        <div className="step-figure">
+          <span className="mini" style={{ color: phaseColor }}>
+            Step {Math.min(currentIdx + 1, 6)} of 6
+          </span>
+          <span className="big">{PHASE_LABEL[project.phase]}</span>
+        </div>
+
         <div className="vstepper">
-          {PHASES.filter((p) => p !== 'done').map((p) => {
+          {PHASES.filter((p) => p !== 'done').map((p, i, arr) => {
             const idx = PHASES.indexOf(p)
             const state =
               project.phase === 'done' || idx < currentIdx ? 'done' : idx === currentIdx ? 'current' : ''
+            const next = arr[i + 1]
             return (
-              <div key={p} className={`vstep ${state}`}>
+              <div
+                key={p}
+                className={`vstep ${state}`}
+                style={
+                  {
+                    '--phase-color': PHASE_COLOR[p],
+                    '--phase-next': next ? PHASE_COLOR[next] : PHASE_COLOR[p]
+                  } as React.CSSProperties
+                }
+              >
                 <span className="bullet">{state === 'done' && <TickIcon size={10} />}</span>
                 {PHASE_LABEL[p]}
               </div>

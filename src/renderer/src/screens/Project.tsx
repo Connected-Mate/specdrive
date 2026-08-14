@@ -51,10 +51,15 @@ function BoardTab({ specs, freshIds }: { specs: Spec[]; freshIds: Set<string> })
         <div className="board-group" key={cat}>
           <div className="board-group-head">
             <span className="label">{CATEGORY_LABEL[cat]}</span>
+            <span className="rule" />
             <span className="n">{items.length}</span>
           </div>
-          {items.map((s) => (
-            <div key={s.id} className={`spec-card${freshIds.has(s.id) ? ' fresh' : ''}`}>
+          {items.map((s, i) => (
+            <div
+              key={s.id}
+              className={`spec-card${freshIds.has(s.id) ? ' fresh' : ''}`}
+              style={{ '--i': i } as React.CSSProperties}
+            >
               <h4>{s.title}</h4>
               <div className="content-md">
                 <Markdown text={s.content} />
@@ -108,8 +113,12 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
           {done}/{tasks.length} · {Math.round((done / tasks.length) * 100)}%
         </span>
       </div>
-      {ordered.map((t) => (
-        <div key={t.id} className={`task-row ${t.status.replace('_', '-')}`}>
+      {ordered.map((t, i) => (
+        <div
+          key={t.id}
+          className={`task-row ${t.status.replace('_', '-')}`}
+          style={{ '--i': i } as React.CSSProperties}
+        >
           <span className={`task-check ${t.status.replace('_', '-')}`}>
             {t.status === 'done' && <TickIcon size={10} />}
           </span>
@@ -160,10 +169,11 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   return (
     <>
       <div className="wireframe-grid">
-        {bundle.wireframes.map((wf) => (
+        {bundle.wireframes.map((wf, i) => (
           <button
             key={wf.id}
             className="wireframe-card"
+            style={{ '--i': i } as React.CSSProperties}
             onClick={() => setOpen(open?.id === wf.id ? null : wf)}
           >
             <div className="wireframe-thumb">
@@ -208,7 +218,7 @@ function ActivityTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
         .reverse()
         .slice(0, 60)
         .map((a, i) => (
-          <div key={i} className="activity-row">
+          <div key={i} className="activity-row" style={{ '--i': i } as React.CSSProperties}>
             <span className="time">{timeAgo(a.ts)}</span>
             <span className="what">{a.summary}</span>
           </div>

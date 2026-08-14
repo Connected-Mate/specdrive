@@ -1,11 +1,15 @@
 import React from 'react'
 
-/** Main pane when no project is selected — fits the viewport, no scroll. */
+/** Main pane when no project is selected — one atmospheric moment, no scroll. */
 export function Welcome(): React.JSX.Element {
   return (
     <div className="welcome">
       <div className="welcome-hero">
+        <div className="art">
+          <img src="images/robot-dusk.png" alt="" />
+        </div>
         <div className="copy">
+          <span className="kicker">Spec-driven, for everyone</span>
           <h1>
             Your idea,
             <br />
@@ -16,9 +20,6 @@ export function Welcome(): React.JSX.Element {
             with a real plan, challenges it, researches it, then builds it step by step. You watch
             it all happen, live.
           </p>
-        </div>
-        <div className="art">
-          <img src="images/robot-dusk.png" alt="" />
         </div>
       </div>
       <div className="welcome-steps">
