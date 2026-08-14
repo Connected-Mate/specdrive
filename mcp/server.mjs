@@ -37,7 +37,7 @@ const PHASE_GUIDE = {
   risks:
     'RISKS: pre-mortem. Rate spec difficulty 1-5 via update_spec. For difficulty 4-5, add a "risks" spec with mitigation/fallback. Flag topics deserving a dedicated deep-dive session. End with a readiness verdict (PASS / CONCERNS / FAIL) recorded as a "decisions" spec; only advance on PASS or owner-accepted CONCERNS. Then set_phase to "plan".',
   plan:
-    'PLAN: choose architecture (record as "tech" specs), sketch 3-6 core screens with add_wireframe (grayscale boxes HTML), define the screen flow with set_flow (screens + labeled links — the owner\'s visual map), create small ordered tasks with add_task (spikes for hard parts first, each with a clear "done" meaning). Then set_phase to "build".',
+    'PLAN: first author the visual plan document with set_plan_doc (narrative sections, decision/risk callouts, an architecture diagram, a trade-off table, open questions with recommended answers). Then sketch 3-6 core screens with add_wireframe, define the screen flow with set_flow, and create small ordered tasks with add_task (spikes for hard parts first, sub-steps via parent_task_id). Then set_phase to "build".',
   build:
     'BUILD: strict loop — take first "todo" task, set "in_progress", re-read its specs, build production-grade, VERIFY it works, set "done" with a plain-words note. Blocked? mark "blocked" + note, move on. When the task list looks finished, call check_convergence and honestly compare code vs board; gaps become new tasks. Only a clean convergence check earns set_phase to "done".',
   done: 'DONE: v1 is complete and converged. Fold any lasting decisions into the specs (update_spec, status "confirmed") so the board stays the truth. New ideas → new specs → new tasks → set_phase back to "build".'
@@ -175,7 +175,8 @@ function loadBundle(id) {
     tasks: readJson(path.join(dir, 'tasks.json'), []),
     wireframes: readJson(path.join(dir, 'wireframes.json'), []),
     flow: readJson(path.join(dir, 'flow.json'), null),
-    scenarios: readJson(path.join(dir, 'scenarios.json'), [])
+    scenarios: readJson(path.join(dir, 'scenarios.json'), []),
+    planDoc: readJson(path.join(dir, 'plan-doc.json'), null)
   }
 }
 
@@ -565,6 +566,73 @@ server.registerTool(
     touchProject(id)
     logActivity(id, 'agent', 'add_wireframe', `Wireframe added: "${screen}" — ${title}`)
     return ok(`Wireframe "${screen}" saved. The owner can now see the sketch.`)
+  }
+)
+
+const sanitizeHtml = (html) =>
+  html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+    .replace(/javascript:/gi, '')
+
+server.registerTool(
+  'set_plan_doc',
+  {
+    title: 'Write the visual plan document',
+    description:
+      'Author the plan as a rich document the owner reads like a magazine page — BEFORE creating tasks. Blocks in reading order: "section" (serif-titled prose), "callout" (decision/risk/note the owner must not miss), "diagram" (small self-contained HTML+CSS sketch, hand-drawn style — use class diagram-panel with diagram-card children and the CSS vars --wf-line/--wf-card/--wf-accent-soft), "table" (trade-offs, options), "questions" (open questions with your recommended answer first). Replaces the whole document — send it complete.',
+    inputSchema: {
+      project: z.string(),
+      blocks: z
+        .array(
+          z.discriminatedUnion('type', [
+            z.object({
+              type: z.literal('section'),
+              title: z.string().max(80),
+              body: z.string().max(4000).describe('Markdown prose, plain words first')
+            }),
+            z.object({
+              type: z.literal('callout'),
+              tone: z.enum(['decision', 'risk', 'note']),
+              body: z.string().max(1000)
+            }),
+            z.object({
+              type: z.literal('table'),
+              title: z.string().max(80).optional(),
+              columns: z.array(z.string().max(60)).min(2).max(5),
+              rows: z.array(z.array(z.string().max(200))).min(1).max(12)
+            }),
+            z.object({
+              type: z.literal('diagram'),
+              html: z.string().max(8000).describe('Self-contained HTML fragment, no scripts'),
+              css: z.string().max(4000).optional(),
+              caption: z.string().max(200).optional()
+            }),
+            z.object({
+              type: z.literal('questions'),
+              items: z
+                .array(z.object({ q: z.string().max(200), suggestion: z.string().max(200).optional() }))
+                .min(1)
+                .max(6)
+            })
+          ])
+        )
+        .min(1)
+        .max(24)
+    }
+  },
+  async ({ project, blocks }) => {
+    const { id } = requireProject(project)
+    const clean = blocks.map((b) =>
+      b.type === 'diagram' ? { ...b, html: sanitizeHtml(b.html), css: b.css ? sanitizeHtml(b.css) : b.css } : b
+    )
+    writeJson(path.join(projectDir(id), 'plan-doc.json'), { blocks: clean, updatedAt: now() })
+    touchProject(id)
+    logActivity(id, 'agent', 'set_plan_doc', `Visual plan written: ${blocks.length} blocks`)
+    return ok(
+      `Visual plan saved (${blocks.length} blocks) — the owner now reads it above the task list. Next: wireframes (add_wireframe), the screen flow (set_flow), then the tasks (add_task).`
+    )
   }
 )
 

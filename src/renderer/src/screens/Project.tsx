@@ -5,6 +5,7 @@ import { Markdown } from '@/lib/markdown'
 import { TickIcon } from '@/components/Icons'
 import { FlowMap } from '@/components/FlowMap'
 import { CursorScene } from '@/components/scene/CursorScene'
+import { PlanDoc } from '@/components/PlanDoc'
 import { timeAgo } from '@/lib/useLive'
 
 const CATEGORY_LABEL: Record<SpecCategory, string> = {
@@ -231,16 +232,20 @@ function TaskRow({
 }
 
 function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
-  const { tasks } = bundle
+  const { tasks, planDoc } = bundle
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  if (!tasks.length) {
+  if (!tasks.length && !planDoc) {
     return (
       <div className="empty">
         <div className="art">No plan yet</div>
-        The build plan appears here once the “Plan” step runs —<br />
-        small ordered steps, each checked off as your product gets built.
+        The build plan appears here once the “Plan” step runs — a readable plan document
+        <br />
+        with decisions and diagrams, then small ordered steps checked off as your product gets built.
       </div>
     )
+  }
+  if (!tasks.length && planDoc) {
+    return <PlanDoc doc={planDoc} />
   }
   const done = tasks.filter((t) => t.status === 'done').length
   const roots = tasks.filter((t) => !t.parentId).sort((a, b) => a.order - b.order)
@@ -256,7 +261,10 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
 
   let row = 0
   return (
-    <div className="plan-wrap">
+    <>
+      {planDoc && <PlanDoc doc={planDoc} />}
+      {planDoc && <h3 className="plan-steps-head">The steps</h3>}
+      <div className="plan-wrap">
       <div className="progress-row">
         <div className="progress-track">
           <div className="progress-fill" style={{ width: `${(done / tasks.length) * 100}%` }} />
@@ -283,7 +291,8 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
           </React.Fragment>
         )
       })}
-    </div>
+      </div>
+    </>
   )
 }
 

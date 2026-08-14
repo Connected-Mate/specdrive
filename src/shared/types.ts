@@ -84,6 +84,25 @@ export interface Wireframe {
   createdAt: string
 }
 
+// ---------- The visual plan document (agent-native style) ----------
+// The plan is a rich document the agent authors, not just a checklist:
+// narrative sections, decision callouts, sketchy diagrams, trade-off tables
+// and open questions — rendered above the task list.
+
+export type CalloutTone = 'decision' | 'risk' | 'note'
+
+export type PlanBlock =
+  | { type: 'section'; title: string; body: string }
+  | { type: 'callout'; tone: CalloutTone; body: string }
+  | { type: 'table'; title?: string; columns: string[]; rows: string[][] }
+  | { type: 'diagram'; html: string; css?: string; caption?: string }
+  | { type: 'questions'; items: { q: string; suggestion?: string }[] }
+
+export interface PlanDoc {
+  blocks: PlanBlock[]
+  updatedAt: string
+}
+
 export type ScenarioStatus = 'draft' | 'walked' | 'gap_found'
 
 export interface ScenarioStep {
@@ -163,6 +182,7 @@ export interface ProjectBundle {
   wireframes: Wireframe[]
   flow: Flow | null
   scenarios: Scenario[]
+  planDoc: PlanDoc | null
   activity: ActivityEntry[]
 }
 

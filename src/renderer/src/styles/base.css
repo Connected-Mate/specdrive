@@ -2191,3 +2191,206 @@ a {
     transform: translateX(-50%) translateY(6px);
   }
 }
+
+/* ============ Plan document (agent-native style) ============ */
+
+.plandoc {
+  max-width: 760px;
+  margin-bottom: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.plandoc > * {
+  animation: spec-in 0.5s var(--ease-spring) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+
+.plandoc-section h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 24px;
+  color: var(--ink);
+  line-height: 1.05;
+  margin-bottom: 8px;
+}
+
+.plandoc-body {
+  font-size: 13px;
+  color: var(--graphite);
+  line-height: 1.55;
+  user-select: text;
+}
+
+.plandoc-body p + p {
+  margin-top: 8px;
+}
+
+.plandoc-body ul,
+.plandoc-body ol {
+  padding-left: 18px;
+  margin: 6px 0;
+}
+
+.plandoc-callout {
+  border-radius: var(--radius-card);
+  padding: 16px 18px 14px;
+  user-select: text;
+}
+
+.plandoc-callout .tone-badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  margin-bottom: 8px;
+}
+
+.plandoc-callout.tone-decision {
+  background: rgba(0, 122, 255, 0.07);
+}
+
+.plandoc-callout.tone-decision .tone-badge {
+  color: var(--signal-blue);
+}
+
+.plandoc-callout.tone-risk {
+  background: rgba(232, 168, 124, 0.14);
+}
+
+.plandoc-callout.tone-risk .tone-badge {
+  color: #a05a2c;
+}
+
+.plandoc-callout.tone-note {
+  background: var(--paper);
+  box-shadow: var(--glow-ring-thin);
+}
+
+.plandoc-callout.tone-note .tone-badge {
+  color: var(--smoke);
+}
+
+.plandoc-table {
+  background: var(--paper);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-ring-thin);
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+
+.plandoc-table .table-title,
+.plandoc-questions .table-title {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 17px;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+
+.plandoc-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  user-select: text;
+}
+
+.plandoc-table th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--smoke);
+  padding: 6px 14px 8px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.plandoc-table td {
+  padding: 9px 14px 9px 0;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--graphite);
+  line-height: 1.45;
+  vertical-align: top;
+}
+
+.plandoc-table tr:last-child td {
+  border-bottom: none;
+}
+
+.plandoc-table td:first-child {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.plandoc-diagram {
+  margin: 0;
+  background: var(--paper);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-ring-thin);
+  overflow: hidden;
+}
+
+.plandoc-diagram iframe {
+  width: 100%;
+  height: 250px;
+  border: none;
+  display: block;
+  background: #fdfdfd;
+}
+
+.plandoc-diagram figcaption {
+  padding: 10px 18px 12px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--smoke);
+  border-top: 1px solid var(--hairline);
+}
+
+.plandoc-questions {
+  background: var(--paper);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-ring);
+  padding: 16px 18px;
+}
+
+.plandoc-question {
+  padding: 10px 0;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  user-select: text;
+}
+
+.plandoc-question:first-of-type {
+  border-top: none;
+}
+
+.plandoc-question .q {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.plandoc-question .s {
+  font-size: 11.5px;
+  color: var(--signal-blue);
+}
+
+.plandoc-questions .hint {
+  display: block;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--smoke);
+}
+
+.plan-steps-head {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 24px;
+  color: var(--ink);
+  margin: 6px 0 12px;
+}
