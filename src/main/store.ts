@@ -20,16 +20,29 @@ function readJson<T>(file: string, fallback: T): T {
 }
 
 function readActivity(dir: string): ActivityEntry[] {
+  let raw: string
   try {
-    return fs
-      .readFileSync(path.join(dir, 'activity.jsonl'), 'utf8')
-      .split('\n')
-      .filter(Boolean)
-      .map((l) => JSON.parse(l) as ActivityEntry)
-      .slice(-200)
+    raw = fs.readFileSync(path.join(dir, 'activity.jsonl'), 'utf8')
   } catch {
     return []
   }
+  const out: ActivityEntry[] = []
+  for (const line of raw.split('\n')) {
+    if (!line) continue
+    try {
+      out.push(JSON.parse(line) as ActivityEntry)
+    } catch {
+      // one bad line must not erase the feed
+    }
+  }
+  return out.slice(-200)
+}
+
+const SAFE_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
+
+function safeId(id: string): string | null {
+  const base = path.basename(id)
+  return SAFE_ID.test(base) ? base : null
 }
 
 export function loadBundle(id: string): ProjectBundle | null {
@@ -59,19 +72,22 @@ export function listBundles(): ProjectBundle[] {
 
 export function readWireframe(projectId: string, file: string): string {
   // Defensive: never allow escaping the wireframes dir.
+  const pid = safeId(projectId)
   const safe = path.basename(file)
-  const p = path.join(PROJECTS_DIR, path.basename(projectId), 'wireframes', safe)
+  if (!pid || !/^[a-z0-9]+\.html$/.test(safe)) return '<p>Wireframe not found.</p>'
   try {
-    return fs.readFileSync(p, 'utf8')
+    return fs.readFileSync(path.join(PROJECTS_DIR, pid, 'wireframes', safe), 'utf8')
   } catch {
     return '<p>Wireframe not found.</p>'
   }
 }
 
 export function deleteProject(id: string): void {
-  const dir = path.join(PROJECTS_DIR, path.basename(id))
+  const pid = safeId(id)
+  if (!pid) return
+  const dir = path.join(PROJECTS_DIR, pid)
   // Move to a trash dir instead of destroying data.
   const trash = path.join(DATA_DIR, 'trash')
   fs.mkdirSync(trash, { recursive: true })
-  if (fs.existsSync(dir)) fs.renameSync(dir, path.join(trash, `${path.basename(id)}-${Date.now()}`))
+  if (fs.existsSync(dir)) fs.renameSync(dir, path.join(trash, `${pid}-${Date.now()}`))
 }

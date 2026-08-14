@@ -123,6 +123,7 @@ app.whenReady().then(() => {
   // Live updates: the MCP server writes files; we push a change signal to the UI.
   const watcher = chokidar.watch(PROJECTS_DIR, {
     ignoreInitial: true,
+    ignored: (p) => /\.tmp$|\.lock$|\.bak$|\.DS_Store$|\.corrupt-/.test(p),
     awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 40 },
     depth: 3
   })
@@ -134,6 +135,10 @@ app.whenReady().then(() => {
     }, 80)
   }
   watcher.on('all', notify)
+  watcher.on('error', (err) => console.error('[specdrive] watcher error:', err))
+  app.on('before-quit', () => {
+    watcher.close().catch(() => {})
+  })
 
   createWindow()
 

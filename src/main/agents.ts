@@ -26,14 +26,36 @@ function exists(p: string): boolean {
   }
 }
 
+const whichCache = new Map<string, boolean>()
+
 async function which(bin: string): Promise<boolean> {
+  const hit = whichCache.get(bin)
+  if (hit !== undefined) return hit
   try {
     // Login shell so we see the user's real PATH (nvm, homebrew...)
     await execFileP('/bin/zsh', ['-lc', `command -v ${bin}`], { timeout: 8000 })
+    whichCache.set(bin, true)
     return true
   } catch {
+    whichCache.set(bin, false)
     return false
   }
+}
+
+let cachedNodePath: string | null = null
+
+/** Absolute node path — GUI agents (Cursor, Claude Desktop…) spawn MCP servers
+ *  with a minimal PATH where a bare "node" does not resolve. */
+export async function nodeBinPath(): Promise<string> {
+  if (cachedNodePath) return cachedNodePath
+  try {
+    const { stdout } = await execFileP('/bin/zsh', ['-lc', 'command -v node'], { timeout: 8000 })
+    const p = stdout.trim().split('\n').pop() ?? ''
+    cachedNodePath = p.startsWith('/') ? p : process.execPath
+  } catch {
+    cachedNodePath = process.execPath
+  }
+  return cachedNodePath
 }
 
 function readJsonSafe(file: string): Record<string, unknown> {
@@ -44,11 +66,29 @@ function readJsonSafe(file: string): Record<string, unknown> {
   }
 }
 
+/** Merge into an agent's config without ever destroying what is already there:
+ *  refuse to touch a file that exists but does not parse, back it up, and
+ *  write atomically. */
 function writeJsonMerged(file: string, mutate: (cfg: Record<string, unknown>) => void): void {
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  const cfg = readJsonSafe(file)
+  let cfg: Record<string, unknown> = {}
+  if (fs.existsSync(file)) {
+    const raw = fs.readFileSync(file, 'utf8')
+    if (raw.trim()) {
+      try {
+        cfg = JSON.parse(raw)
+      } catch {
+        throw new Error(
+          `${path.basename(file)} exists but is not valid JSON — not touching it. Fix or remove it, then retry.`
+        )
+      }
+      fs.writeFileSync(`${file}.bak`, raw)
+    }
+  }
   mutate(cfg)
-  fs.writeFileSync(file, JSON.stringify(cfg, null, 2))
+  const tmp = `${file}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2))
+  fs.renameSync(tmp, file)
 }
 
 type McpServersConfig = { mcpServers?: Record<string, unknown> }
@@ -58,10 +98,10 @@ function hasSpecdriveEntry(file: string): boolean {
   return Boolean(cfg.mcpServers && 'specdrive' in cfg.mcpServers)
 }
 
-function addSpecdriveJsonEntry(file: string, serverPath: string): void {
+function addSpecdriveJsonEntry(file: string, serverPath: string, nodeBin: string): void {
   writeJsonMerged(file, (cfg) => {
     const c = cfg as McpServersConfig
-    c.mcpServers = { ...(c.mcpServers ?? {}), specdrive: { command: 'node', args: [serverPath] } }
+    c.mcpServers = { ...(c.mcpServers ?? {}), specdrive: { command: nodeBin, args: [serverPath] } }
   })
 }
 
@@ -149,37 +189,38 @@ export async function detectAgents(serverPath: string): Promise<DetectedAgent[]>
 }
 
 export async function connectAgent(id: AgentId, serverPath: string): Promise<void> {
+  const nodeBin = await nodeBinPath()
   switch (id) {
     case 'claude-code': {
       // The CLI merges into ~/.claude.json for us; user scope = available everywhere.
       await execFileP(
         '/bin/zsh',
-        ['-lc', `claude mcp add specdrive --scope user -- node "${serverPath}"`],
+        ['-lc', `claude mcp add specdrive --scope user -- "${nodeBin}" "${serverPath}"`],
         { timeout: 20000 }
       )
       return
     }
     case 'cursor':
-      addSpecdriveJsonEntry(CURSOR_MCP, serverPath)
+      addSpecdriveJsonEntry(CURSOR_MCP, serverPath, nodeBin)
       return
     case 'claude-desktop':
-      addSpecdriveJsonEntry(CLAUDE_DESKTOP_CFG, serverPath)
+      addSpecdriveJsonEntry(CLAUDE_DESKTOP_CFG, serverPath, nodeBin)
       return
     case 'windsurf':
-      addSpecdriveJsonEntry(WINDSURF_MCP, serverPath)
+      addSpecdriveJsonEntry(WINDSURF_MCP, serverPath, nodeBin)
       return
     case 'gemini-cli':
-      addSpecdriveJsonEntry(GEMINI_CFG, serverPath)
+      addSpecdriveJsonEntry(GEMINI_CFG, serverPath, nodeBin)
       return
     case 'codex-cli': {
       if (codexConnected()) return
       fs.mkdirSync(path.dirname(CODEX_CFG), { recursive: true })
-      const entry = `\n[mcp_servers.specdrive]\ncommand = "node"\nargs = ["${serverPath}"]\n`
+      const entry = `\n[mcp_servers.specdrive]\ncommand = "${nodeBin}"\nargs = ["${serverPath}"]\n`
       fs.appendFileSync(CODEX_CFG, entry)
       return
     }
     case 'antigravity':
-      addSpecdriveJsonEntry(ANTIGRAVITY_MCP, serverPath)
+      addSpecdriveJsonEntry(ANTIGRAVITY_MCP, serverPath, nodeBin)
       return
   }
 }

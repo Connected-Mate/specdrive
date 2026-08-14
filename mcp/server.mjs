@@ -69,16 +69,67 @@ function now() {
   return new Date().toISOString()
 }
 
+// Several agent sessions can write the same board at once (the app encourages
+// fresh sessions per phase) — every read-modify-write goes through a lock dir,
+// and tmp files are unique so concurrent renames can't eat each other.
+function withLock(file, fn) {
+  const lock = file + '.lock'
+  const deadline = Date.now() + 3000
+  for (;;) {
+    try {
+      fs.mkdirSync(lock)
+      break
+    } catch {
+      if (Date.now() > deadline) {
+        // Stale lock (crashed process) — steal it.
+        try {
+          fs.rmdirSync(lock)
+        } catch {}
+      }
+      const wait = Date.now() + 15
+      while (Date.now() < wait) {} // tiny sync backoff; calls are millisecond-scale
+    }
+  }
+  try {
+    return fn()
+  } finally {
+    try {
+      fs.rmdirSync(lock)
+    } catch {}
+  }
+}
+
 function writeJson(file, data) {
-  const tmp = file + '.tmp'
+  const tmp = `${file}.${process.pid}-${crypto.randomBytes(3).toString('hex')}.tmp`
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2))
   fs.renameSync(tmp, file)
 }
 
+/** Read-modify-write a JSON list/object under the file's lock. */
+function updateJson(file, fallback, mutate) {
+  return withLock(file, () => {
+    const data = readJson(file, fallback)
+    const result = mutate(data)
+    if (data !== null && data !== undefined) writeJson(file, data)
+    return result
+  })
+}
+
 function readJson(file, fallback) {
+  let raw
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
+    raw = fs.readFileSync(file, 'utf8')
   } catch {
+    return fallback // missing file — a normal state
+  }
+  try {
+    return JSON.parse(raw)
+  } catch {
+    // Corrupted file: preserve it for recovery, never silently overwrite.
+    try {
+      fs.renameSync(file, `${file}.corrupt-${Date.now()}`)
+      console.error(`[specdrive] ${path.basename(file)} was corrupted — set aside, starting fresh`)
+    } catch {}
     return fallback
   }
 }
@@ -96,18 +147,24 @@ function listProjectIds() {
     .filter((id) => fs.existsSync(path.join(projectDir(id), 'project.json')))
 }
 
-/** Resolve a project by id or (fuzzy) name. Returns {id, project} or null. */
+/** Resolve a project by id or exact name. Throws when ambiguous. */
 function resolveProject(ref) {
   const ids = listProjectIds()
   const norm = slugify(ref)
   for (const id of ids) {
     if (id === ref || id === norm) return { id, project: readJson(path.join(projectDir(id), 'project.json')) }
   }
+  const matches = []
   for (const id of ids) {
     const p = readJson(path.join(projectDir(id), 'project.json'))
-    if (p && p.name.toLowerCase() === ref.toLowerCase()) return { id, project: p }
+    if (p && p.name.toLowerCase() === ref.toLowerCase()) matches.push({ id, project: p })
   }
-  return null
+  if (matches.length > 1) {
+    throw new Error(
+      `"${ref}" matches ${matches.length} projects (${matches.map((m) => m.id).join(', ')}). Use the exact project id.`
+    )
+  }
+  return matches[0] ?? null
 }
 
 function loadBundle(id) {
@@ -123,13 +180,32 @@ function loadBundle(id) {
 }
 
 function saveProject(id, project) {
+  if (!project) return
   project.updatedAt = now()
   writeJson(path.join(projectDir(id), 'project.json'), project)
 }
 
+/** Bump the project's updatedAt (and optionally patch it) safely. */
+function touchProject(id, patch) {
+  updateJson(path.join(projectDir(id), 'project.json'), null, (p) => {
+    if (!p) return
+    if (patch) Object.assign(p, patch)
+    p.updatedAt = now()
+  })
+}
+
 function logActivity(id, actor, action, summary) {
-  const line = JSON.stringify({ ts: now(), actor, action, summary }) + '\n'
-  fs.appendFileSync(path.join(projectDir(id), 'activity.jsonl'), line)
+  try {
+    const file = path.join(projectDir(id), 'activity.jsonl')
+    fs.appendFileSync(file, JSON.stringify({ ts: now(), actor, action, summary }) + '\n')
+    // Keep the log bounded: past ~512KB, keep the newest 2000 lines.
+    if (fs.statSync(file).size > 512 * 1024) {
+      const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
+      fs.writeFileSync(file, lines.slice(-2000).join('\n') + '\n')
+    }
+  } catch {
+    // Activity is best-effort; never fail a tool call over it.
+  }
 }
 
 function ok(text) {
@@ -271,6 +347,7 @@ server.registerTool(
       content: z
         .string()
         .min(1)
+        .max(20000)
         .describe('Markdown body. Start with 1-2 plain sentences a non-developer understands; details/links after.'),
       tags: z.array(z.string()).optional(),
       difficulty: z.number().int().min(1).max(5).optional().describe('1 easy → 5 hardest'),
@@ -285,7 +362,6 @@ server.registerTool(
   async ({ project, category, title, content, tags, difficulty, acceptance }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
-    const specs = readJson(path.join(dir, 'specs.json'), [])
     const spec = {
       id: uid(),
       category,
@@ -298,13 +374,13 @@ server.registerTool(
       createdAt: now(),
       updatedAt: now()
     }
-    specs.push(spec)
-    writeJson(path.join(dir, 'specs.json'), specs)
-    const p = readJson(path.join(dir, 'project.json'))
-    saveProject(id, p)
+    const counts = updateJson(path.join(dir, 'specs.json'), [], (specs) => {
+      specs.push(spec)
+      return { total: specs.length, cat: specs.filter((s) => s.category === category).length }
+    })
+    touchProject(id)
     logActivity(id, 'agent', 'add_spec', `New ${category} spec: "${title}"`)
-    const count = specs.filter((s) => s.category === category).length
-    return ok(`Spec "${title}" saved (id: ${spec.id}). Board now has ${specs.length} specs (${count} in ${category}).`)
+    return ok(`Spec "${title}" saved (id: ${spec.id}). Board now has ${counts.total} specs (${counts.cat} in ${category}).`)
   }
 )
 
@@ -327,17 +403,19 @@ server.registerTool(
   async ({ project, spec_id, title, content, status, difficulty, challenge_note }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
-    const specs = readJson(path.join(dir, 'specs.json'), [])
-    const spec = specs.find((s) => s.id === spec_id)
+    const spec = updateJson(path.join(dir, 'specs.json'), [], (specs) => {
+      const s = specs.find((x) => x.id === spec_id)
+      if (!s) return null
+      if (title !== undefined) s.title = title
+      if (content !== undefined) s.content = content
+      if (status !== undefined) s.status = status
+      if (difficulty !== undefined) s.difficulty = difficulty
+      if (challenge_note !== undefined) s.challengeNote = challenge_note
+      s.updatedAt = now()
+      return s
+    })
     if (!spec) return fail(`No spec with id "${spec_id}". Use get_project to list spec ids.`)
-    if (title !== undefined) spec.title = title
-    if (content !== undefined) spec.content = content
-    if (status !== undefined) spec.status = status
-    if (difficulty !== undefined) spec.difficulty = difficulty
-    if (challenge_note !== undefined) spec.challengeNote = challenge_note
-    spec.updatedAt = now()
-    writeJson(path.join(dir, 'specs.json'), specs)
-    saveProject(id, readJson(path.join(dir, 'project.json')))
+    touchProject(id)
     logActivity(id, 'agent', 'update_spec', `Spec updated: "${spec.title}"${status ? ` → ${status}` : ''}`)
     return ok(`Spec "${spec.title}" updated.`)
   }
@@ -366,28 +444,30 @@ server.registerTool(
   async ({ project, title, detail, spec_ids, order, parent_task_id }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
-    const tasks = readJson(path.join(dir, 'tasks.json'), [])
-    if (parent_task_id) {
-      const parent = tasks.find((t) => t.id === parent_task_id)
-      if (!parent) return fail(`No task with id "${parent_task_id}" to nest under.`)
-      if (parent.parentId) return fail('Sub-steps only nest one level deep — pick a top-level task as parent.')
-    }
-    const task = {
-      id: uid(),
-      title,
-      detail,
-      specIds: spec_ids ?? [],
-      status: 'todo',
-      order: order ?? (tasks.length ? Math.max(...tasks.map((t) => t.order)) + 1 : 1),
-      parentId: parent_task_id,
-      createdAt: now(),
-      updatedAt: now()
-    }
-    tasks.push(task)
-    writeJson(path.join(dir, 'tasks.json'), tasks)
-    saveProject(id, readJson(path.join(dir, 'project.json')))
+    const result = updateJson(path.join(dir, 'tasks.json'), [], (tasks) => {
+      if (parent_task_id) {
+        const parent = tasks.find((t) => t.id === parent_task_id)
+        if (!parent) return { err: `No task with id "${parent_task_id}" to nest under.` }
+        if (parent.parentId) return { err: 'Sub-steps only nest one level deep — pick a top-level task as parent.' }
+      }
+      const task = {
+        id: uid(),
+        title,
+        detail,
+        specIds: spec_ids ?? [],
+        status: 'todo',
+        order: order ?? (tasks.length ? Math.max(...tasks.map((t) => t.order)) + 1 : 1),
+        parentId: parent_task_id,
+        createdAt: now(),
+        updatedAt: now()
+      }
+      tasks.push(task)
+      return { task, total: tasks.length }
+    })
+    if (result.err) return fail(result.err)
+    touchProject(id)
     logActivity(id, 'agent', 'add_task', `Task added: "${title}"`)
-    return ok(`Task "${title}" added (id: ${task.id}, position ${task.order}). Plan has ${tasks.length} tasks.`)
+    return ok(`Task "${title}" added (id: ${result.task.id}, position ${result.task.order}). Plan has ${result.total} tasks.`)
   }
 )
 
@@ -407,40 +487,40 @@ server.registerTool(
   async ({ project, task_id, status, note }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
-    const tasks = readJson(path.join(dir, 'tasks.json'), [])
-    const task = tasks.find((t) => t.id === task_id)
-    if (!task) return fail(`No task with id "${task_id}". Use get_project to list task ids.`)
-    if (status === 'done' && task.status !== 'in_progress') {
-      return fail(
-        `Task "${task.title}" is "${task.status}", not "in_progress". Set it in_progress first, actually do and VERIFY the work, then mark it done.`
-      )
-    }
-    if (status === 'done' && !note) {
-      return fail('A "done" task needs a note: one plain sentence describing what now works.')
-    }
-    if (status === 'done') {
-      const openChildren = tasks.filter((t) => t.parentId === task.id && t.status !== 'done')
-      if (openChildren.length) {
-        return fail(
-          `Task "${task.title}" still has ${openChildren.length} open sub-step(s): ${openChildren.map((t) => `"${t.title}"`).join(', ')}. Finish them first.`
-        )
+    const r = updateJson(path.join(dir, 'tasks.json'), [], (tasks) => {
+      const task = tasks.find((t) => t.id === task_id)
+      if (!task) return { err: `No task with id "${task_id}". Use get_project to list task ids.` }
+      if (status === 'done' && task.status !== 'in_progress') {
+        return {
+          err: `Task "${task.title}" is "${task.status}", not "in_progress". Set it in_progress first, actually do and VERIFY the work, then mark it done.`
+        }
       }
-    }
-    task.status = status
-    if (note !== undefined) task.note = note
-    task.updatedAt = now()
-    writeJson(path.join(dir, 'tasks.json'), tasks)
-    saveProject(id, readJson(path.join(dir, 'project.json')))
-    logActivity(id, 'agent', 'update_task', `Task "${task.title}" → ${status}${note ? ` — ${note}` : ''}`)
-    const remaining = tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length
-    const next = tasks
-      .filter((t) => t.status === 'todo')
-      .sort((a, b) => a.order - b.order)[0]
+      if (status === 'done' && !note) {
+        return { err: 'A "done" task needs a note: one plain sentence describing what now works.' }
+      }
+      if (status === 'done') {
+        const openChildren = tasks.filter((t) => t.parentId === task.id && t.status !== 'done')
+        if (openChildren.length) {
+          return {
+            err: `Task "${task.title}" still has ${openChildren.length} open sub-step(s): ${openChildren.map((t) => `"${t.title}"`).join(', ')}. Finish them first.`
+          }
+        }
+      }
+      task.status = status
+      if (note !== undefined) task.note = note
+      task.updatedAt = now()
+      const remaining = tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length
+      const next = tasks.filter((t) => t.status === 'todo').sort((a, b) => a.order - b.order)[0]
+      return { title: task.title, remaining, next: next ? { title: next.title, id: next.id } : null }
+    })
+    if (r.err) return fail(r.err)
+    touchProject(id)
+    logActivity(id, 'agent', 'update_task', `Task "${r.title}" → ${status}${note ? ` — ${note}` : ''}`)
     return ok(
-      `Task "${task.title}" → ${status}. ${remaining} task(s) remaining.` +
-        (status === 'done' && next ? ` Next up: "${next.title}" (id: ${next.id}).` : '') +
-        (status === 'done' && !remaining
-          ? ' All tasks complete — verify the product end-to-end, then set_phase to "done".'
+      `Task "${r.title}" → ${status}. ${r.remaining} task(s) remaining.` +
+        (status === 'done' && r.next ? ` Next up: "${r.next.title}" (id: ${r.next.id}).` : '') +
+        (status === 'done' && !r.remaining
+          ? ' All tasks complete — run check_convergence before declaring the project done.'
           : '')
     )
   }
@@ -456,22 +536,33 @@ server.registerTool(
       project: z.string(),
       screen: z.string().max(60).describe('Which screen this is, e.g. "Home", "Checkout"'),
       title: z.string().max(80),
-      html: z.string().describe('Complete self-contained HTML document. Grayscale boxes + labels. No scripts, no external URLs.')
+      html: z
+        .string()
+        .max(120000)
+        .describe('Complete self-contained HTML document. Grayscale boxes + labels. No scripts, no external URLs.')
     }
   },
   async ({ project, screen, title, html }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
-    const wfs = readJson(path.join(dir, 'wireframes.json'), [])
     const wid = uid()
     const file = `${wid}.html`
     // Strip scripts defensively — wireframes are sketches, not apps.
-    const safe = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/\son\w+="[^"]*"/gi, '')
+    const stripped = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+      .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+      .replace(/javascript:/gi, '')
+    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">`
+    const safe = /<head[^>]*>/i.test(stripped)
+      ? stripped.replace(/<head[^>]*>/i, (m) => `${m}${csp}`)
+      : `${csp}${stripped}`
     fs.mkdirSync(path.join(dir, 'wireframes'), { recursive: true })
     fs.writeFileSync(path.join(dir, 'wireframes', file), safe)
-    wfs.push({ id: wid, screen, title, file, createdAt: now() })
-    writeJson(path.join(dir, 'wireframes.json'), wfs)
-    saveProject(id, readJson(path.join(dir, 'project.json')))
+    updateJson(path.join(dir, 'wireframes.json'), [], (wfs) => {
+      wfs.push({ id: wid, screen, title, file, createdAt: now() })
+    })
+    touchProject(id)
     logActivity(id, 'agent', 'add_wireframe', `Wireframe added: "${screen}" — ${title}`)
     return ok(`Wireframe "${screen}" saved. The owner can now see the sketch.`)
   }
@@ -502,7 +593,6 @@ server.registerTool(
   async ({ project, title, actor, steps }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
-    const scenarios = readJson(path.join(dir, 'scenarios.json'), [])
     const scenario = {
       id: uid(),
       title,
@@ -512,9 +602,10 @@ server.registerTool(
       createdAt: now(),
       updatedAt: now()
     }
-    scenarios.push(scenario)
-    writeJson(path.join(dir, 'scenarios.json'), scenarios)
-    saveProject(id, readJson(path.join(dir, 'project.json')))
+    updateJson(path.join(dir, 'scenarios.json'), [], (scenarios) => {
+      scenarios.push(scenario)
+    })
+    touchProject(id)
     logActivity(id, 'agent', 'add_scenario', `New scenario: "${title}"`)
     return ok(
       `Scenario "${title}" saved (id: ${scenario.id}, ${steps.length} steps). Now WALK it: check every step against the specs — if a step has no spec covering it, that is a gap. Report the walk with update_scenario (status "walked", or "gap_found" with gap_note + fix the board).`
@@ -550,25 +641,29 @@ server.registerTool(
   async ({ project, scenario_id, status, gap_note, steps }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
-    const scenarios = readJson(path.join(dir, 'scenarios.json'), [])
-    const sc = scenarios.find((s) => s.id === scenario_id)
-    if (!sc) return fail(`No scenario with id "${scenario_id}". Use get_project to list them.`)
-    if (status === 'gap_found' && !gap_note && !sc.gapNote) {
-      return fail('gap_found needs gap_note: one plain sentence saying what is missing or would break.')
-    }
-    sc.status = status
-    if (gap_note !== undefined) sc.gapNote = gap_note
-    if (steps !== undefined) sc.steps = steps
-    sc.updatedAt = now()
-    writeJson(path.join(dir, 'scenarios.json'), scenarios)
-    saveProject(id, readJson(path.join(dir, 'project.json')))
+    const res = updateJson(path.join(dir, 'scenarios.json'), [], (scenarios) => {
+      const sc = scenarios.find((s) => s.id === scenario_id)
+      if (!sc) return { err: `No scenario with id "${scenario_id}". Use get_project to list them.` }
+      if (status === 'gap_found' && !gap_note && !sc.gapNote) {
+        return { err: 'gap_found needs gap_note: one plain sentence saying what is missing or would break.' }
+      }
+      sc.status = status
+      if (gap_note !== undefined) sc.gapNote = gap_note
+      if (steps !== undefined) sc.steps = steps
+      sc.updatedAt = now()
+      return { title: sc.title, remaining: scenarios.filter((s) => s.status === 'draft').length }
+    })
+    if (res.err) return fail(res.err)
+    const sc = { title: res.title }
+    const remainingDraft = res.remaining
+    touchProject(id)
     logActivity(
       id,
       'agent',
       'update_scenario',
       `Scenario "${sc.title}" → ${status}${gap_note ? ` — ${gap_note}` : ''}`
     )
-    const remaining = scenarios.filter((s) => s.status === 'draft').length
+    const remaining = remainingDraft
     return ok(
       `Scenario "${sc.title}" → ${status}.` +
         (status === 'gap_found'
@@ -590,7 +685,7 @@ server.registerTool(
       screens: z
         .array(
           z.object({
-            id: z.string().describe('Short stable id, e.g. "home"'),
+            id: z.string().regex(/^[a-zA-Z0-9_-]{1,32}$/).describe('Short stable id, letters/digits/dash only, e.g. "home"'),
             name: z.string().max(40).describe('Screen name shown on the map, e.g. "Shop page"'),
             purpose: z.string().max(120).optional().describe('One plain sentence: what the user does here'),
             entry: z.boolean().optional().describe('True for the ONE screen where the user starts')
@@ -617,11 +712,12 @@ server.registerTool(
   async ({ project, screens, links }) => {
     const { id } = requireProject(project)
     const ids = new Set(screens.map((s) => s.id))
+    if (ids.size !== screens.length) return fail('Duplicate screen ids — each screen needs a unique id.')
     const bad = links.find((l) => !ids.has(l.from) || !ids.has(l.to))
     if (bad) return fail(`Link ${bad.from} → ${bad.to} references an unknown screen id. Screen ids: ${[...ids].join(', ')}`)
     if (screens.filter((s) => s.entry).length > 1) return fail('Only one screen can have entry: true.')
     writeJson(path.join(projectDir(id), 'flow.json'), { screens, links, updatedAt: now() })
-    saveProject(id, readJson(path.join(projectDir(id), 'project.json')))
+    touchProject(id)
     logActivity(id, 'agent', 'set_flow', `Visual plan updated: ${screens.length} screens, ${links.length} links`)
     return ok(`Visual plan saved — ${screens.length} screens, ${links.length} links. The owner now sees the flow map. Tip: name wireframe "screen" fields exactly like these screen names so sketches attach to the map.`)
   }
@@ -641,6 +737,24 @@ server.registerTool(
   },
   async ({ project, phase, summary }) => {
     const { id, project: p } = requireProject(project)
+    if (phase === 'done') {
+      const tasks = readJson(path.join(projectDir(id), 'tasks.json'), [])
+      const open = tasks.filter((t) => t.status !== 'done')
+      if (!tasks.length) {
+        return fail('Cannot set phase "done": there is no build plan at all. Plan and build first.')
+      }
+      if (open.length) {
+        return fail(
+          `Cannot set phase "done": ${open.length} task(s) are not done yet (${open.slice(0, 3).map((t) => `"${t.title}"`).join(', ')}${open.length > 3 ? '…' : ''}).`
+        )
+      }
+      const lastTaskUpdate = tasks.reduce((m, t) => (t.updatedAt > m ? t.updatedAt : m), '')
+      if (!p.lastConvergenceAt || p.lastConvergenceAt < lastTaskUpdate) {
+        return fail(
+          'Cannot set phase "done": run check_convergence AFTER the last task change, walk it honestly, and only then close the project.'
+        )
+      }
+    }
     const prev = p.phase
     p.phaseHistory = p.phaseHistory || {}
     if (prev !== phase) p.phaseHistory[prev] = now()
@@ -649,6 +763,43 @@ server.registerTool(
     logActivity(id, 'agent', 'set_phase', summary ? `${prev} → ${phase}: ${summary}` : `${prev} → ${phase}`)
     return ok(
       `Phase is now "${phase}".\nWhat to do → ${PHASE_GUIDE[phase]}\n\nIMPORTANT for the owner experience: if you have finished your role in the previous phase, tell the owner to go back to the SpecDrive app — it shows them the exact prompt for the "${phase}" step (often in a FRESH agent session, which gives better results than continuing here).`
+    )
+  }
+)
+
+server.registerTool(
+  'get_next_task',
+  {
+    title: 'Get the next task to build',
+    description:
+      'The build loop\'s cheap read: returns the next unblocked task (sub-steps first) plus ONLY the specs it implements — no full board dump. Use this instead of get_project between tasks.',
+    inputSchema: { project: z.string() }
+  },
+  async ({ project }) => {
+    const { id, project: p } = requireProject(project)
+    const dir = projectDir(id)
+    const tasks = readJson(path.join(dir, 'tasks.json'), [])
+    const specs = readJson(path.join(dir, 'specs.json'), [])
+    const inProgress = tasks.find((t) => t.status === 'in_progress')
+    const todo = tasks.filter((t) => t.status === 'todo').sort((a, b) => a.order - b.order)
+    // Prefer finishing an open parent's sub-steps before starting new roots.
+    const next =
+      inProgress ??
+      todo.find((t) => t.parentId && tasks.find((x) => x.id === t.parentId)?.status !== 'done') ??
+      todo[0]
+    if (!next) {
+      return ok('No open tasks. Run check_convergence — only a clean check earns set_phase "done".')
+    }
+    const linked = specs.filter((sp) => (next.specIds ?? []).includes(sp.id))
+    const parent = next.parentId ? tasks.find((t) => t.id === next.parentId) : null
+    return ok(
+      `NEXT TASK${inProgress ? ' (already in progress)' : ''}: "${next.title}" (id: ${next.id})\n` +
+        (parent ? `Sub-step of: "${parent.title}"\n` : '') +
+        `What to do: ${next.detail}\n` +
+        (linked.length
+          ? `Specs it implements:\n${linked.map((sp) => `--- ${sp.title} [${sp.category}]\n${sp.content}${sp.acceptance ? `\nHow we'll know it works: ${sp.acceptance}` : ''}`).join('\n')}`
+          : 'No specs linked — re-read the board if unsure.') +
+        `\n\nDiscipline: set it "in_progress" first (update_task), build production-grade, VERIFY for real, then mark "done" with a plain-words note. Project phase: ${p.phase}.`
     )
   }
 )
@@ -668,9 +819,35 @@ server.registerTool(
     const unconfirmed = bundle.specs.filter((s) => s.status !== 'confirmed')
     const withAcceptance = bundle.specs.filter((s) => s.acceptance)
     const scenarios = bundle.scenarios ?? []
-    logActivity(id, 'agent', 'check_convergence', 'Convergence check started')
+
+    // Computed findings — a real diff of the board, not a vibe check.
+    const buildable = bundle.specs.filter((sp) => ['features', 'design', 'tech', 'data'].includes(sp.category))
+    const coveredSpecIds = new Set(bundle.tasks.flatMap((t) => t.specIds ?? []))
+    const uncoveredSpecs = buildable.filter((sp) => !coveredSpecIds.has(sp.id))
+    const specIdSet = new Set(bundle.specs.map((sp) => sp.id))
+    const orphanTasks = bundle.tasks.filter((t) => (t.specIds ?? []).some((sid) => !specIdSet.has(sid)))
+    const draftScenarios = scenarios.filter((sc) => sc.status === 'draft')
+    const gapScenarios = scenarios.filter((sc) => sc.status === 'gap_found')
+    const findings = []
+    if (open.length) findings.push(`OPEN TASKS (${open.length}): ${open.map((t) => `"${t.title}" [${t.status}]`).join(', ')}`)
+    if (uncoveredSpecs.length)
+      findings.push(`SPECS WITH NO TASK (${uncoveredSpecs.length}): ${uncoveredSpecs.map((sp) => `"${sp.title}"`).join(', ')} — either link/add tasks or explain why none is needed`)
+    if (orphanTasks.length)
+      findings.push(`TASKS CITING UNKNOWN SPECS (${orphanTasks.length}): ${orphanTasks.map((t) => `"${t.title}"`).join(', ')}`)
+    if (draftScenarios.length)
+      findings.push(`SCENARIOS NEVER WALKED (${draftScenarios.length}): ${draftScenarios.map((sc) => `"${sc.title}"`).join(', ')}`)
+    if (gapScenarios.length)
+      findings.push(`SCENARIOS WITH OPEN GAPS (${gapScenarios.length}): ${gapScenarios.map((sc) => `"${sc.title}"`).join(', ')}`)
+    if (!scenarios.length) findings.push('NO USAGE SCENARIOS AT ALL — write them with add_scenario; converging without scenarios is not credible')
+
+    touchProject(id, { lastConvergenceAt: now() })
+    logActivity(id, 'agent', 'check_convergence', findings.length ? `Convergence check: ${findings.length} finding group(s)` : 'Convergence check: computed clean')
     return ok(
-      `CONVERGENCE CHECK for "${bundle.project.name}" — go through this honestly, one item at a time:\n\n` +
+      `CONVERGENCE CHECK for "${bundle.project.name}"\n\n` +
+        (findings.length
+          ? `COMPUTED FINDINGS — resolve every line before claiming convergence:\n${findings.map((f) => `  • ${f}`).join('\n')}\n\n`
+          : 'COMPUTED FINDINGS: none — the board is internally consistent. Now verify REALITY matches it:\n\n') +
+        `Walk this honestly, one item at a time:\n\n` +
         `1. Open tasks: ${open.length ? open.map((t) => `"${t.title}" (${t.status})`).join(', ') : 'none'}. If any exist, you are NOT done — finish or re-scope them first.\n` +
         `2. For EVERY feature/design/tech/data spec, verify the built product actually honors it. Run the product, do not assume. Specs to walk: ${bundle.specs.filter((s) => ['features', 'design', 'tech', 'data'].includes(s.category)).map((s) => `"${s.title}"`).join(', ') || '(none)'}.\n` +
         `3. Acceptance scenarios to execute for real (${withAcceptance.length}): ${withAcceptance.map((s) => `"${s.title}"`).join(', ') || 'none recorded'}. Each must pass as written — ideally as an automated test.\n` +

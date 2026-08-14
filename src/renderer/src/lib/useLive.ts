@@ -7,10 +7,16 @@ export function useProjects(): { projects: ProjectBundle[]; loaded: boolean } {
   const [loaded, setLoaded] = useState(false)
 
   const refresh = useCallback(() => {
-    window.specdrive.listProjects().then((p) => {
-      setProjects(p)
-      setLoaded(true)
-    })
+    window.specdrive
+      .listProjects()
+      .then((p) => {
+        setProjects(p)
+        setLoaded(true)
+      })
+      .catch((err) => {
+        console.error('listProjects failed:', err)
+        setLoaded(true) // never leave the app permanently blank
+      })
   }, [])
 
   useEffect(() => {
@@ -30,7 +36,10 @@ export function useAgents(): {
   const [agents, setAgents] = useState<DetectedAgent[]>([])
 
   const refresh = useCallback(() => {
-    window.specdrive.detectAgents().then(setAgents)
+    window.specdrive
+      .detectAgents()
+      .then(setAgents)
+      .catch((err) => console.error('detectAgents failed:', err))
   }, [])
 
   useEffect(refresh, [refresh])

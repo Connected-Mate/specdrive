@@ -93,7 +93,7 @@ export default function App(): React.JSX.Element {
           onEgg={() => setEggOn(true)}
         />
         {open ? (
-          <Project bundle={open} />
+          <Project key={open.project.id} bundle={open} />
         ) : (
           <main className="content">
             <div className="content-head">

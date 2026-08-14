@@ -295,16 +295,26 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
     [bundle.wireframes]
   )
 
+  const wfIds = bundle.wireframes.map((w) => w.id).join(',')
   useEffect(() => {
     for (const wf of bundle.wireframes) {
       if (!docs[wf.id]) {
         window.specdrive
           .readWireframe(bundle.project.id, wf.file)
           .then((html) => setDocs((d) => ({ ...d, [wf.id]: html })))
+          .catch(() => {})
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bundle.wireframes.length])
+  }, [wfIds])
+
+  const dataUrls = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const [id, html] of Object.entries(docs)) {
+      map[id] = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+    }
+    return map
+  }, [docs])
 
   if (!bundle.wireframes.length && !bundle.flow) {
     return (
@@ -316,8 +326,7 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
     )
   }
 
-  const dataUrl = (id: string): string | undefined =>
-    docs[id] ? `data:text/html;charset=utf-8,${encodeURIComponent(docs[id])}` : undefined
+  const dataUrl = (id: string): string | undefined => dataUrls[id]
 
   return (
     <>
@@ -328,11 +337,8 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
             sketchScreens={sketchScreens}
             thumbs={Object.fromEntries(
               bundle.wireframes
-                .filter((w) => docs[w.id])
-                .map((w) => [
-                  w.screen.toLowerCase(),
-                  `data:text/html;charset=utf-8,${encodeURIComponent(docs[w.id])}`
-                ])
+                .filter((w) => dataUrls[w.id])
+                .map((w) => [w.screen.toLowerCase(), dataUrls[w.id]])
             )}
             onOpenScreen={(name) => {
               const wf = bundle.wireframes.find(
