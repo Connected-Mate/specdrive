@@ -35,9 +35,11 @@ function createWindow(): void {
     win.webContents.on('did-finish-load', () => {
       const route = process.env.SPECDRIVE_ROUTE
       if (route) {
-        win?.webContents.executeJavaScript(
-          `window.dispatchEvent(new CustomEvent('specdrive:open-project', { detail: ${JSON.stringify(route)} }))`
-        )
+        setTimeout(() => {
+          win?.webContents.executeJavaScript(
+            `window.dispatchEvent(new CustomEvent('specdrive:open-project', { detail: ${JSON.stringify(route)} }))`
+          )
+        }, 1200)
       }
       setTimeout(async () => {
         const scroll = Number(process.env.SPECDRIVE_SCROLL ?? 0)

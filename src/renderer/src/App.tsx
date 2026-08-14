@@ -1,27 +1,37 @@
-import React, { useEffect, useState } from 'react'
-import { Home } from './screens/Home'
+import React, { useEffect, useRef, useState } from 'react'
+import { Welcome } from './screens/Welcome'
 import { Project } from './screens/Project'
+import { Sidebar } from './components/Sidebar'
+import { GuideRail } from './components/GuideRail'
 import { ToastProvider } from './components/Toast'
 import { useAgents, useProjects } from './lib/useLive'
-import { PlaneIcon, BackIcon } from './components/Icons'
 
 export default function App(): React.JSX.Element {
   const { projects, loaded } = useProjects()
-  const { agents, connect, refresh } = useAgents()
+  const { agents, connect } = useAgents()
   const [openId, setOpenId] = useState<string | null>(null)
 
-  // A brand-new project created by the agent while we're on Home? Jump into it.
-  const prevCount = React.useRef<number>(-1)
+  // A brand-new project created by the agent? Jump into it — the magic moment.
+  const prevCount = useRef<number>(-1)
   useEffect(() => {
     if (!loaded) return
-    if (prevCount.current >= 0 && projects.length === prevCount.current + 1 && openId === null) {
+    if (prevCount.current >= 0 && projects.length === prevCount.current + 1) {
       const newest = projects.reduce((a, b) =>
         a.project.createdAt > b.project.createdAt ? a : b
       )
       setOpenId(newest.project.id)
     }
     prevCount.current = projects.length
-  }, [projects, loaded, openId])
+  }, [projects, loaded])
+
+  // First launch with existing projects: open the most recent one (app, not landing page).
+  const booted = useRef(false)
+  useEffect(() => {
+    if (loaded && !booted.current) {
+      booted.current = true
+      if (projects.length) setOpenId(projects[0].project.id)
+    }
+  }, [loaded, projects])
 
   // Automated visual checks can force a project open.
   useEffect(() => {
@@ -34,42 +44,28 @@ export default function App(): React.JSX.Element {
 
   return (
     <ToastProvider>
-      <div className="drag-strip" />
-      <div style={{ padding: '0 36px' }}>
-        <nav className="nav-capsule">
-          <button
-            className="brand"
-            onClick={() => {
-              setOpenId(null)
-              refresh()
-            }}
-          >
-            <span className="brand-orb">
-              <PlaneIcon />
-            </span>
-            SpecDrive
-          </button>
-          <div className="nav-right">
-            {open ? (
-              <button
-                className="pill pill-quiet"
-                onClick={() => setOpenId(null)}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-              >
-                <BackIcon />
-                All projects
-              </button>
-            ) : (
-              <span>Free · works with your AI agents</span>
-            )}
-          </div>
-        </nav>
+      <div className="shell">
+        <Sidebar
+          projects={projects}
+          agents={agents}
+          openId={open ? open.project.id : null}
+          onSelect={setOpenId}
+          connect={connect}
+        />
+        {open ? (
+          <Project bundle={open} />
+        ) : (
+          <main className="content">
+            <div className="content-head">
+              <div className="content-title">
+                <h1>Welcome</h1>
+              </div>
+            </div>
+            <Welcome />
+          </main>
+        )}
+        <GuideRail bundle={open ?? null} />
       </div>
-      {open ? (
-        <Project bundle={open} onBack={() => setOpenId(null)} />
-      ) : (
-        <Home projects={projects} agents={agents} connect={connect} openProject={setOpenId} />
-      )}
     </ToastProvider>
   )
 }
