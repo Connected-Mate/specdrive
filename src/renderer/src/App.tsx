@@ -1,15 +1,52 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Welcome } from './screens/Welcome'
 import { Project } from './screens/Project'
 import { Sidebar } from './components/Sidebar'
 import { GuideRail } from './components/GuideRail'
 import { ToastProvider } from './components/Toast'
 import { useAgents, useProjects } from './lib/useLive'
+import { SidebarIcon } from './components/Icons'
+
+const SIDE_KEY = 'specdrive-sidebar'
+const NARROW = 1080
 
 export default function App(): React.JSX.Element {
   const { projects, loaded } = useProjects()
   const { agents, connect } = useAgents()
   const [openId, setOpenId] = useState<string | null>(null)
+  const [sideOpen, setSideOpen] = useState<boolean>(() => {
+    if (window.innerWidth < NARROW) return false
+    return localStorage.getItem(SIDE_KEY) !== 'closed'
+  })
+
+  const toggleSide = useCallback(() => {
+    setSideOpen((v) => {
+      localStorage.setItem(SIDE_KEY, v ? 'closed' : 'open')
+      return !v
+    })
+  }, [])
+
+  // Auto-collapse on narrow windows; restore the user's preference when wide again.
+  useEffect(() => {
+    const onResize = (): void => {
+      if (window.innerWidth < NARROW) setSideOpen(false)
+      else setSideOpen(localStorage.getItem(SIDE_KEY) !== 'closed')
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  // Cmd+\ toggles the sidebar, like native Mac apps.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey && e.key === '\\') {
+        e.preventDefault()
+        toggleSide()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [toggleSide])
 
   // A brand-new project created by the agent? Jump into it — the magic moment.
   const prevCount = useRef<number>(-1)
@@ -24,7 +61,7 @@ export default function App(): React.JSX.Element {
     prevCount.current = projects.length
   }, [projects, loaded])
 
-  // First launch with existing projects: open the most recent one (app, not landing page).
+  // First launch with existing projects: open the most recent one.
   const booted = useRef(false)
   useEffect(() => {
     if (loaded && !booted.current) {
@@ -44,7 +81,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <ToastProvider>
-      <div className="shell">
+      <div className={`shell${sideOpen ? '' : ' side-closed'}`}>
         <Sidebar
           projects={projects}
           agents={agents}
@@ -65,6 +102,14 @@ export default function App(): React.JSX.Element {
           </main>
         )}
         <GuideRail bundle={open ?? null} />
+        <button
+          className="side-toggle"
+          title="Hide or show the sidebar (⌘\)"
+          aria-label="Toggle sidebar"
+          onClick={toggleSide}
+        >
+          <SidebarIcon />
+        </button>
       </div>
     </ToastProvider>
   )

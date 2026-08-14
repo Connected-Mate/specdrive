@@ -41,6 +41,14 @@ function createWindow(): void {
           )
         }, 1200)
       }
+      const tab = process.env.SPECDRIVE_TAB
+      if (tab) {
+        setTimeout(() => {
+          win?.webContents.executeJavaScript(
+            `window.dispatchEvent(new CustomEvent('specdrive:open-tab', { detail: ${JSON.stringify(tab)} }))`
+          )
+        }, 1500)
+      }
       setTimeout(async () => {
         const scroll = Number(process.env.SPECDRIVE_SCROLL ?? 0)
         if (scroll) {
@@ -85,6 +93,14 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   ensureDataDirs()
+  if (process.platform === 'darwin' && !app.isPackaged && app.dock) {
+    const devIcon = path.resolve(__dirname, '..', '..', 'resources', 'icon.png')
+    try {
+      app.dock.setIcon(devIcon)
+    } catch {
+      // cosmetic only
+    }
+  }
   const serverPath = mcpServerPath(__dirname, app.isPackaged)
 
   ipcMain.handle('projects:list', () => listBundles())

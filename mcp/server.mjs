@@ -37,7 +37,7 @@ const PHASE_GUIDE = {
   risks:
     'RISKS: pre-mortem. Rate spec difficulty 1-5 via update_spec. For difficulty 4-5, add a "risks" spec with mitigation/fallback. Flag topics deserving a dedicated deep-dive session. End with a readiness verdict (PASS / CONCERNS / FAIL) recorded as a "decisions" spec; only advance on PASS or owner-accepted CONCERNS. Then set_phase to "plan".',
   plan:
-    'PLAN: choose architecture (record as "tech" specs), sketch 3-6 core screens with add_wireframe (grayscale boxes HTML), create small ordered tasks with add_task (spikes for hard parts first, each with a clear "done" meaning). Then set_phase to "build".',
+    'PLAN: choose architecture (record as "tech" specs), sketch 3-6 core screens with add_wireframe (grayscale boxes HTML), define the screen flow with set_flow (screens + labeled links — the owner\'s visual map), create small ordered tasks with add_task (spikes for hard parts first, each with a clear "done" meaning). Then set_phase to "build".',
   build:
     'BUILD: strict loop — take first "todo" task, set "in_progress", re-read its specs, build production-grade, VERIFY it works, set "done" with a plain-words note. Blocked? mark "blocked" + note, move on. All done → set_phase to "done".',
   done: 'DONE: v1 is complete. New ideas → new specs → new tasks → set_phase back to "build".'
@@ -116,7 +116,8 @@ function loadBundle(id) {
     project: readJson(path.join(dir, 'project.json')),
     specs: readJson(path.join(dir, 'specs.json'), []),
     tasks: readJson(path.join(dir, 'tasks.json'), []),
-    wireframes: readJson(path.join(dir, 'wireframes.json'), [])
+    wireframes: readJson(path.join(dir, 'wireframes.json'), []),
+    flow: readJson(path.join(dir, 'flow.json'), null)
   }
 }
 
@@ -447,6 +448,47 @@ server.registerTool(
     saveProject(id, readJson(path.join(dir, 'project.json')))
     logActivity(id, 'agent', 'add_wireframe', `Wireframe added: "${screen}" — ${title}`)
     return ok(`Wireframe "${screen}" saved. The owner can now see the sketch.`)
+  }
+)
+
+server.registerTool(
+  'set_flow',
+  {
+    title: 'Set the visual plan (screen flow)',
+    description:
+      'Define the product\'s screens and how users move between them. Drawn as a flow map the owner can read at a glance. Call during the plan phase, after (or alongside) add_wireframe. Replaces the whole flow — send the complete picture each time.',
+    inputSchema: {
+      project: z.string(),
+      screens: z
+        .array(
+          z.object({
+            id: z.string().describe('Short stable id, e.g. "home"'),
+            name: z.string().max(40).describe('Screen name shown on the map, e.g. "Shop page"'),
+            purpose: z.string().max(120).optional().describe('One plain sentence: what the user does here')
+          })
+        )
+        .min(1)
+        .max(12),
+      links: z
+        .array(
+          z.object({
+            from: z.string(),
+            to: z.string(),
+            label: z.string().max(40).optional().describe('What triggers the move, e.g. "taps Reserve"')
+          })
+        )
+        .max(24)
+    }
+  },
+  async ({ project, screens, links }) => {
+    const { id } = requireProject(project)
+    const ids = new Set(screens.map((s) => s.id))
+    const bad = links.find((l) => !ids.has(l.from) || !ids.has(l.to))
+    if (bad) return fail(`Link ${bad.from} → ${bad.to} references an unknown screen id. Screen ids: ${[...ids].join(', ')}`)
+    writeJson(path.join(projectDir(id), 'flow.json'), { screens, links, updatedAt: now() })
+    saveProject(id, readJson(path.join(projectDir(id), 'project.json')))
+    logActivity(id, 'agent', 'set_flow', `Visual plan updated: ${screens.length} screens, ${links.length} links`)
+    return ok(`Visual plan saved — ${screens.length} screens, ${links.length} links. The owner now sees the flow map. Tip: name wireframe "screen" fields exactly like these screen names so sketches attach to the map.`)
   }
 )
 

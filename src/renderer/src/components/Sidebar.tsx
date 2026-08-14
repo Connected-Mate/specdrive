@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import type { DetectedAgent, ProjectBundle } from '@shared/types'
-import { PlaneIcon } from './Icons'
+import { StarIcon } from './Icons'
 import { useToast } from './Toast'
 import { PHASE_COLOR } from '@/lib/phaseColors'
 
@@ -36,9 +36,9 @@ export function Sidebar({
       <div className="sidebar-drag" />
       <button className="sidebar-brand" onClick={() => onSelect(null)}>
         <span className="brand-orb">
-          <PlaneIcon />
+          <StarIcon />
         </span>
-        SpecDrive
+        <span className="wordmark">SpecDrive</span>
       </button>
 
       <div className="sidebar-label">Projects</div>

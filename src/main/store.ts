@@ -41,6 +41,7 @@ export function loadBundle(id: string): ProjectBundle | null {
     specs: readJson(path.join(dir, 'specs.json'), []),
     tasks: readJson(path.join(dir, 'tasks.json'), []),
     wireframes: readJson(path.join(dir, 'wireframes.json'), []),
+    flow: readJson(path.join(dir, 'flow.json'), null),
     activity: readActivity(dir)
   } as ProjectBundle
 }

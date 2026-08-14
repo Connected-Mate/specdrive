@@ -3,6 +3,7 @@ import type { ProjectBundle, Spec, SpecCategory, Wireframe } from '@shared/types
 import { SPEC_CATEGORIES } from '@shared/types'
 import { Markdown } from '@/lib/markdown'
 import { TickIcon } from '@/components/Icons'
+import { FlowMap } from '@/components/FlowMap'
 import { timeAgo } from '@/lib/useLive'
 
 const CATEGORY_LABEL: Record<SpecCategory, string> = {
@@ -141,6 +142,10 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
 function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   const [open, setOpen] = useState<Wireframe | null>(null)
   const [docs, setDocs] = useState<Record<string, string>>({})
+  const sketchScreens = useMemo(
+    () => new Set(bundle.wireframes.map((w) => w.screen.toLowerCase())),
+    [bundle.wireframes]
+  )
 
   useEffect(() => {
     for (const wf of bundle.wireframes) {
@@ -153,12 +158,12 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bundle.wireframes.length])
 
-  if (!bundle.wireframes.length) {
+  if (!bundle.wireframes.length && !bundle.flow) {
     return (
       <div className="empty">
-        <div className="art">No sketches yet</div>
-        During the “Plan” step, your AI agent sketches each screen of your product —<br />
-        rough gray shapes, so you can react before anything is built.
+        <div className="art">No visual plan yet</div>
+        During the “Plan” step, your AI agent draws a map of your product’s screens —<br />
+        and sketches each one in rough gray shapes, so you can react before anything is built.
       </div>
     )
   }
@@ -168,6 +173,24 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
 
   return (
     <>
+      {bundle.flow && bundle.flow.screens.length > 0 && (
+        <>
+          <FlowMap
+            flow={bundle.flow}
+            sketchScreens={sketchScreens}
+            onOpenScreen={(name) => {
+              const wf = bundle.wireframes.find(
+                (w) => w.screen.toLowerCase() === name.toLowerCase()
+              )
+              if (wf) setOpen(wf)
+            }}
+          />
+          <p className="flow-hint">
+            The map of your product — each arrow is something the user does. A blue dot means the
+            screen has a sketch: click it.
+          </p>
+        </>
+      )}
       <div className="wireframe-grid">
         {bundle.wireframes.map((wf, i) => (
           <button
@@ -249,6 +272,13 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
     return undefined
   }, [specs])
 
+  // Automated visual checks can force a tab.
+  useEffect(() => {
+    const h = (e: Event): void => setTab((e as CustomEvent<Tab>).detail)
+    window.addEventListener('specdrive:open-tab', h)
+    return () => window.removeEventListener('specdrive:open-tab', h)
+  }, [])
+
   // Auto-jump to the plan while building, board otherwise? Keep user control; just default once.
   const autoTabbed = useRef(false)
   useEffect(() => {
@@ -261,7 +291,7 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
   const tabs: { id: Tab; label: string; count: number }[] = [
     { id: 'board', label: 'Board', count: specs.length },
     { id: 'plan', label: 'Plan', count: tasks.length },
-    { id: 'sketches', label: 'Sketches', count: wireframes.length },
+    { id: 'sketches', label: 'Screens', count: wireframes.length },
     { id: 'activity', label: 'Activity', count: activity.length }
   ]
 

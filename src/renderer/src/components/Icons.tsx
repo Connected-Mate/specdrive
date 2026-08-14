@@ -6,6 +6,23 @@ export const PlaneIcon = (): React.JSX.Element => (
   </svg>
 )
 
+/** Four-pointed guiding star — the SpecDrive mark */
+export const StarIcon = (): React.JSX.Element => (
+  <svg viewBox="0 0 24 24" fill="none">
+    <path
+      d="M12 2c.9 5.2 3.4 8.1 10 10-6.6 1.9-9.1 4.8-10 10-.9-5.2-3.4-8.1-10-10 6.6-1.9 9.1-4.8 10-10Z"
+      fill="#fff"
+    />
+  </svg>
+)
+
+export const SidebarIcon = (): React.JSX.Element => (
+  <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
+    <rect x="1.5" y="2.5" width="15" height="13" rx="3.5" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M7 3v12" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+)
+
 export const TickIcon = ({ size = 12 }: { size?: number }): React.JSX.Element => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className="tick">
     <path d="M3 8.5 6.5 12 13 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

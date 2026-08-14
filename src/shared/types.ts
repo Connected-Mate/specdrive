@@ -80,6 +80,27 @@ export interface Wireframe {
   createdAt: string
 }
 
+export interface FlowScreen {
+  id: string
+  name: string
+  /** One plain sentence: what the user does on this screen */
+  purpose?: string
+}
+
+export interface FlowLink {
+  from: string
+  to: string
+  /** What triggers the move, e.g. "taps Reserve" */
+  label?: string
+}
+
+/** The visual plan: screens of the product and how users move between them */
+export interface Flow {
+  screens: FlowScreen[]
+  links: FlowLink[]
+  updatedAt: string
+}
+
 export interface ActivityEntry {
   ts: string
   actor: 'agent' | 'app'
@@ -106,6 +127,7 @@ export interface ProjectBundle {
   specs: Spec[]
   tasks: Task[]
   wireframes: Wireframe[]
+  flow: Flow | null
   activity: ActivityEntry[]
 }
 
