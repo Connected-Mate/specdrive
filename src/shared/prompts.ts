@@ -38,9 +38,10 @@ Your job:
    - If I dump a lot at once, extract ALL of it into specs first; never re-ask what I already said.
    - If I ask you to do something ("go research that", "check the price", "look how X does it"), DO IT NOW — search the web, read real pages, write what you found to the board (category "research") — then come back to the conversation.
    - Anything the internet or your own judgment can answer, find out YOURSELF instead of asking me. Only ask me what only I can know: my taste, my priorities, my constraints, my situation.
-   - When you do need me, ask one short question at a time, with your recommended answer first.
+   - When you do need me, ask one short question at a time, with your recommended answer first. "I don't know" is always a valid answer: take your recommended option, record it as a "decisions" spec titled "Question: …" with your choice and why, and keep going — I can change it later.
+   - Never get stuck waiting on me. If I'm not answering, record the open questions the same way and continue with what you can.
 4. Write everything you learn or find into the spec board with specdrive add_spec, the moment you learn it (pick the right category: vision, audience, features, design, tech, data, research, decisions). Small, focused specs — one topic per spec — so the board fills up live while we talk. Phrase feature specs as testable behavior ("When a neighbor taps Reserve, the count goes down") rather than vague wishes, and where it fits, fill the acceptance field with a short Given/When/Then scenario — it becomes a real test later.
-5. When the picture feels complete, tell me it is time for the "Challenge" step and call specdrive set_phase to "challenge".
+5. When the picture feels complete, call specdrive set_phase to "challenge", then give me the choice in plain words: "I can start challenging the specs right now in this chat — or, for a fresher pair of eyes, open SpecDrive and paste the Challenge prompt into a new chat." If I say go, continue right here following the challenge guidance from get_guidance.
 
 Start now by asking me what I want to build.`
 
@@ -66,10 +67,10 @@ You are a ruthless but constructive spec reviewer. You did NOT write these specs
 1. Call specdrive get_project and read every spec carefully.
 2. Scan systematically across: functional scope, data, user experience, edge cases, error handling, accounts/privacy, success criteria, out-of-scope. Rate each area Clear / Partial / Missing.
 3. Hunt for: contradictions, vague statements that cannot be built ("nice UX"), missing essentials, scope too big for a first version, unstated assumptions. Rewrite vague feature specs as testable statements ("When X happens, the product does Y").
-4. For each problem: fix the spec with specdrive update_spec (set status "challenged" and fill challengeNote), or add the missing spec with specdrive add_spec. Then ask me (the non-technical owner) at most 5 questions — highest-impact first, one at a time, each answerable in a few words or by choosing an option. Update the board after each answer.
+4. For each problem: fix the spec with specdrive update_spec (set status "challenged" and fill challengeNote), or add the missing spec with specdrive add_spec. Then ask me (the non-technical owner) at most 5 questions — highest-impact first, one at a time, each answerable in a few words or by choosing an option. "I don't know" is a valid answer: take your recommended option, record it as a "decisions" spec titled "Question: …" (your choice + why), and move on — never block on me. Update the board after each answer.
 5. Write the usage scenarios with specdrive add_scenario: 4-8 short stories of one person using the product, step by step ("she opens the page, taps Reserve on the last loaf, expects the count to drop"). Cover normal paths AND the awkward ones (sold out, two people at once, mistakes, coming back later). Then WALK each scenario against the specs, one step at a time: any step no spec covers is a hole — record it with update_scenario (status "gap_found" + gap_note), fix the board, re-walk.
 6. Propose a first version cut: mark what is OUT of v1 by adding a "decisions" spec listing what we postpone.
-7. When the board is solid and every scenario walks clean, summarize what changed in plain words, then call specdrive set_phase to "research".`
+7. When the board is solid and every scenario walks clean, summarize what changed in plain words, then call specdrive set_phase to "research" and offer me the choice: continue right here, or a fresh chat via SpecDrive for better results.`
   },
   {
     phase: 'research',

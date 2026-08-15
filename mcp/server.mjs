@@ -29,7 +29,7 @@ const CATEGORIES = [
 
 const PHASE_GUIDE = {
   capture:
-    'CAPTURE: understand the owner\'s idea — follow their lead, this is a conversation, not a questionnaire. If they ask you to research something, do it NOW (web search, real pages) and add_spec the findings (category "research"). Never ask what the web or the board can answer; ask only what only the owner knows (taste, priorities, constraints), one short question at a time with your recommended answer first. add_spec everything the moment you learn it. When complete, set_phase to "challenge".',
+    'CAPTURE: understand the owner\'s idea — follow their lead, this is a conversation, not a questionnaire. If they ask you to research something, do it NOW (web search, real pages) and add_spec the findings (category "research"). Never ask what the web or the board can answer; ask only what only the owner knows (taste, priorities, constraints), one short question at a time with your recommended answer first — "I don\'t know" is valid: record a "decisions" spec titled "Question: …" with your recommended choice and continue, never block. add_spec everything the moment you learn it. When complete, set_phase to "challenge".',
   challenge:
     'CHALLENGE: act as a fresh, skeptical reviewer. Find contradictions, vagueness, missing essentials, oversized scope. Fix via update_spec (status "challenged" + challenge_note) or add_spec. Write 4-8 usage scenarios with add_scenario (happy paths AND unhappy paths), walk each against the specs, record gaps with update_scenario and close them. Record v1 cuts as a "decisions" spec. Then set_phase to "research".',
   research:
@@ -1010,7 +1010,7 @@ server.registerTool(
     saveProject(id, p)
     logActivity(id, 'agent', 'set_phase', summary ? `${prev} → ${phase}: ${summary}` : `${prev} → ${phase}`)
     return ok(
-      `Phase is now "${phase}".\nWhat to do → ${PHASE_GUIDE[phase]}\n\nIMPORTANT for the owner experience: if you have finished your role in the previous phase, tell the owner to go back to the SpecDrive app — it shows them the exact prompt for the "${phase}" step (often in a FRESH agent session, which gives better results than continuing here).`
+      `Phase is now "${phase}".\nWhat to do → ${PHASE_GUIDE[phase]}\n\nOwner experience: give the owner the CHOICE, in plain words — (a) you continue right here into the "${phase}" step immediately (follow the guide above), or (b) for a fresher pair of eyes they open SpecDrive and paste the "${phase}" prompt into a new chat. Never force the app round-trip; if they say "go", keep working here.`
     )
   }
 )
