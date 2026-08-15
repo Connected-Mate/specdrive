@@ -479,6 +479,18 @@ server.registerTool(
     const spec = updateJson(path.join(dir, 'specs.json'), [], (specs) => {
       const s = specs.find((x) => x.id === spec_id)
       if (!s) return null
+      // History: every change keeps its before/after so the owner can see
+      // what the challenge (or any pass) actually did — not just a note.
+      s.history = s.history ?? []
+      const log = (field, from, to) => {
+        if (from === to || to === undefined) return
+        s.history.push({ ts: now(), field, from: String(from ?? ''), to: String(to), why: challenge_note })
+        if (s.history.length > 20) s.history = s.history.slice(-20)
+      }
+      log('title', s.title, title)
+      log('content', s.content, content)
+      log('status', s.status, status)
+      log('difficulty', s.difficulty, difficulty)
       if (title !== undefined) s.title = title
       if (content !== undefined) s.content = content
       if (status !== undefined) s.status = status

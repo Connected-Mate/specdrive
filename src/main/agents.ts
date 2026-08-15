@@ -1,5 +1,5 @@
 // Detection + one-click MCP registration for the AI coding agents on this Mac.
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -126,6 +126,100 @@ function codexConnected(): boolean {
   }
 }
 
+function specdriveEntry(file: string): { command: string; args: string[] } | null {
+  const cfg = readJsonSafe(file) as McpServersConfig
+  const e = cfg.mcpServers?.['specdrive'] as { command?: string; args?: string[] } | undefined
+  if (!e?.command) return null
+  return { command: e.command, args: e.args ?? [] }
+}
+
+function codexEntry(): { command: string; args: string[] } | null {
+  try {
+    const raw = fs.readFileSync(CODEX_CFG, 'utf8')
+    const block = raw.split('[mcp_servers.specdrive]')[1]
+    if (!block) return null
+    const cmd = /command\s*=\s*"([^"]+)"/.exec(block)?.[1]
+    const args = /args\s*=\s*\[([^\]]*)\]/.exec(block)?.[1]
+    if (!cmd) return null
+    return {
+      command: cmd,
+      args: args ? [...args.matchAll(/"([^"]+)"/g)].map((m) => m[1]) : []
+    }
+  } catch {
+    return null
+  }
+}
+
+function claudeEntry(): { command: string; args: string[] } | null {
+  return specdriveEntry(CLAUDE_JSON)
+}
+
+const AGENT_CONFIGS: Record<string, { path: string; entry: () => { command: string; args: string[] } | null }> = {
+  'claude-code': { path: CLAUDE_JSON, entry: claudeEntry },
+  cursor: { path: CURSOR_MCP, entry: () => specdriveEntry(CURSOR_MCP) },
+  'claude-desktop': { path: CLAUDE_DESKTOP_CFG, entry: () => specdriveEntry(CLAUDE_DESKTOP_CFG) },
+  windsurf: { path: WINDSURF_MCP, entry: () => specdriveEntry(WINDSURF_MCP) },
+  antigravity: { path: ANTIGRAVITY_MCP, entry: () => specdriveEntry(ANTIGRAVITY_MCP) },
+  'gemini-cli': { path: GEMINI_CFG, entry: () => specdriveEntry(GEMINI_CFG) },
+  'codex-cli': { path: CODEX_CFG, entry: codexEntry }
+}
+
+/** The truth test: launch exactly what the agent's config says, shake hands. */
+export async function verifyAgent(id: AgentId): Promise<{ ok: boolean; detail: string; checkedAt: string }> {
+  const checkedAt = new Date().toISOString()
+  const cfg = AGENT_CONFIGS[id]
+  if (!cfg) return { ok: false, detail: 'Unknown agent.', checkedAt }
+  const entry = cfg.entry()
+  if (!entry) {
+    return { ok: false, detail: `No "specdrive" entry in ${cfg.path.replace(process.env.HOME ?? '', '~')} — not connected.`, checkedAt }
+  }
+  return await new Promise((resolve) => {
+    let settled = false
+    const done = (ok: boolean, detail: string): void => {
+      if (settled) return
+      settled = true
+      try {
+        child.kill()
+      } catch {}
+      resolve({ ok, detail, checkedAt })
+    }
+    let child: ReturnType<typeof import('node:child_process').spawn>
+    try {
+      child = spawn(entry.command, entry.args, { stdio: ['pipe', 'pipe', 'pipe'] })
+    } catch (e) {
+      resolve({ ok: false, detail: `Could not launch "${entry.command}": ${String(e)}`, checkedAt })
+      return
+    }
+    const timer = setTimeout(() => done(false, `The configured server did not answer within 4s (command: ${entry.command}).`), 4000)
+    let buf = ''
+    child.stdout?.on('data', (d) => {
+      buf += String(d)
+      if (buf.includes('"serverInfo"') && buf.includes('specdrive')) {
+        clearTimeout(timer)
+        done(true, `Server responds — launched "${entry.command} ${entry.args.join(' ')}" and completed a real MCP handshake.`)
+      }
+    })
+    child.on('error', (e) => {
+      clearTimeout(timer)
+      done(false, `Launch failed: ${e.message} (command: ${entry.command}). The path in the config is probably wrong.`)
+    })
+    child.on('exit', (code) => {
+      if (!settled) {
+        clearTimeout(timer)
+        done(false, `Server exited immediately (code ${code}).`)
+      }
+    })
+    child.stdin?.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'specdrive-app-check', version: '1.0' } }
+      }) + '\n'
+    )
+  })
+}
+
 export async function detectAgents(serverPath: string): Promise<DetectedAgent[]> {
   const [claudeCli, geminiCli, codexCli] = await Promise.all([
     which('claude'),
@@ -185,6 +279,16 @@ export async function detectAgents(serverPath: string): Promise<DetectedAgent[]>
       install: 'auto'
     }
   ]
+  for (const a of agents) {
+    const cfg = AGENT_CONFIGS[a.id]
+    if (!cfg) continue
+    a.configPath = cfg.path
+    const entry = cfg.entry()
+    if (entry) {
+      a.command = entry.command
+      a.args = entry.args
+    }
+  }
   return agents
 }
 

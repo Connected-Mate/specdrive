@@ -12,7 +12,9 @@ import {
   DATA_DIR,
   PROJECTS_DIR
 } from './store'
-import { detectAgents, connectAgent, mcpServerPath, nodeBinPath } from './agents'
+import { detectAgents, connectAgent, verifyAgent, mcpServerPath, nodeBinPath } from './agents'
+import { exportProject } from './exporter'
+import { readImage, addImage } from './store'
 import type { AgentId } from '../shared/types'
 
 const isDev = !app.isPackaged
@@ -132,7 +134,19 @@ app.whenReady().then(() => {
   ipcMain.handle('document:read', (_e, projectId: string, file: string) =>
     readDocument(projectId, file)
   )
+  ipcMain.handle('document:read-image', (_e, projectId: string, file: string) =>
+    readImage(projectId, file)
+  )
+  ipcMain.handle('document:add-image', (_e, projectId: string, name: string, b64: string) =>
+    addImage(projectId, name, b64)
+  )
+  ipcMain.handle('project:export', async (_e, id: string) => {
+    const bundle = loadBundle(id)
+    if (!bundle) return null
+    return exportProject(bundle)
+  })
   ipcMain.handle('agents:detect', () => detectAgents(serverPath))
+  ipcMain.handle('agents:verify', (_e, id: AgentId) => verifyAgent(id))
   ipcMain.handle('agents:connect', async (_e, id: AgentId) => {
     await connectAgent(id, serverPath)
     const all = await detectAgents(serverPath)

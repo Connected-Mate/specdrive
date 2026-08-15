@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import type { DetectedAgent, ProjectBundle } from '@shared/types'
+import type { AgentVerification, DetectedAgent, ProjectBundle } from '@shared/types'
 import { useToast } from './Toast'
 import { PHASE_COLOR } from '@/lib/phaseColors'
 
@@ -31,6 +31,21 @@ export function Sidebar({
   const toast = useToast()
   const [busy, setBusy] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [openAgent, setOpenAgent] = useState<DetectedAgent['id'] | null>(null)
+  const [checks, setChecks] = useState<Record<string, AgentVerification | 'checking'>>({})
+
+  const runCheck = async (id: DetectedAgent['id']): Promise<void> => {
+    setChecks((c) => ({ ...c, [id]: 'checking' }))
+    try {
+      const v = await window.specdrive.verifyAgent(id)
+      setChecks((c) => ({ ...c, [id]: v }))
+    } catch {
+      setChecks((c) => ({
+        ...c,
+        [id]: { ok: false, detail: 'Check failed to run.', checkedAt: new Date().toISOString() }
+      }))
+    }
+  }
   useEffect(() => {
     if (!confirmDelete) return
     const t = setTimeout(() => setConfirmDelete(null), 3500)
@@ -120,18 +135,41 @@ export function Sidebar({
           </div>
         )}
         {installed.map((a, i) => (
-          <div key={a.id} className="agent-row" style={{ '--i': i } as React.CSSProperties}>
+          <div key={a.id}>
+          <div
+            className="agent-row clickable"
+            style={{ '--i': i } as React.CSSProperties}
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              const next = openAgent === a.id ? null : a.id
+              setOpenAgent(next)
+              if (next && a.connected && !checks[a.id]) runCheck(a.id)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setOpenAgent(openAgent === a.id ? null : a.id)
+            }}
+          >
             <span className={`dot${a.connected ? ' on' : ''}`} />
             <span className="name">{a.name}</span>
             {!a.connected && (
               <button
                 className="link"
                 disabled={busy === a.id}
-                onClick={async () => {
+                onClick={async (e) => {
+                  e.stopPropagation()
                   setBusy(a.id)
                   try {
                     await connect(a.id)
-                    toast(`${a.name} is now connected`)
+                    // Never claim success without proof: run the real handshake.
+                    const v = await window.specdrive.verifyAgent(a.id)
+                    setChecks((c) => ({ ...c, [a.id]: v }))
+                    setOpenAgent(a.id)
+                    toast(
+                      v.ok
+                        ? `${a.name} linked — server verified for real`
+                        : `${a.name}: config written but the link does NOT respond`
+                    )
                   } catch {
                     toast(`Could not connect ${a.name}`)
                   } finally {
@@ -142,6 +180,43 @@ export function Sidebar({
                 {busy === a.id ? '…' : 'Connect'}
               </button>
             )}
+          </div>
+          {openAgent === a.id && (
+            <div className="agent-detail">
+              {a.connected ? (
+                <>
+                  {checks[a.id] === 'checking' && <p className="ad-line">Testing the real link…</p>}
+                  {checks[a.id] && checks[a.id] !== 'checking' && (
+                    <p className={`ad-line ${(checks[a.id] as AgentVerification).ok ? 'ok' : 'bad'}`}>
+                      {(checks[a.id] as AgentVerification).ok ? '✓ Really works — ' : '✗ NOT working — '}
+                      {(checks[a.id] as AgentVerification).detail}
+                    </p>
+                  )}
+                  {!checks[a.id] && <p className="ad-line">Click “Test now” to prove the link.</p>}
+                </>
+              ) : (
+                <p className="ad-line">Not connected yet — no “specdrive” entry in its config.</p>
+              )}
+              {a.configPath && (
+                <p className="ad-meta">
+                  Config: <code>{a.configPath.replace(/^\/Users\/[^/]+/, '~')}</code>
+                </p>
+              )}
+              {a.command && (
+                <p className="ad-meta">
+                  Launches: <code>{a.command} {(a.args ?? []).join(' ')}</code>
+                </p>
+              )}
+              <p className="ad-meta faded">
+                SpecDrive can see whether this link truly answers — not the agent’s account or plan.
+              </p>
+              {a.connected && (
+                <button className="pill pill-quiet" style={{ marginTop: 6 }} onClick={() => runCheck(a.id)}>
+                  Test now
+                </button>
+              )}
+            </div>
+          )}
           </div>
         ))}
       </div>

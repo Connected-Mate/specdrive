@@ -2,6 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import crypto from 'node:crypto'
 import type { ActivityEntry, ProjectBundle } from '../shared/types'
 
 export const DATA_DIR = path.join(os.homedir(), '.specdrive')
@@ -94,6 +95,56 @@ export function readDocument(projectId: string, file: string): string {
   } catch {
     return 'Document not found.'
   }
+}
+
+const IMG_EXT = /\.(png|jpe?g|gif|webp)$/i
+
+export function readImage(projectId: string, file: string): string {
+  const pid = safeId(projectId)
+  const safe = path.basename(file)
+  if (!pid || !IMG_EXT.test(safe) || safe.includes('..')) return ''
+  try {
+    const buf = fs.readFileSync(path.join(PROJECTS_DIR, pid, 'documents', safe))
+    const ext = safe.split('.').pop()!.toLowerCase().replace('jpg', 'jpeg')
+    return `data:image/${ext};base64,${buf.toString('base64')}`
+  } catch {
+    return ''
+  }
+}
+
+export function addImage(projectId: string, name: string, dataBase64: string): void {
+  const pid = safeId(projectId)
+  if (!pid) return
+  const clean = path.basename(name)
+  const m = IMG_EXT.exec(clean)
+  if (!m) return
+  const buf = Buffer.from(dataBase64, 'base64')
+  if (buf.length > 8 * 1024 * 1024) return // 8MB cap
+  const id = crypto.randomBytes(5).toString('hex')
+  const file = `${id}${m[0].toLowerCase()}`
+  const dir = path.join(PROJECTS_DIR, pid)
+  fs.mkdirSync(path.join(dir, 'documents'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'documents', file), buf)
+  const metaFile = path.join(dir, 'documents.json')
+  let docs: unknown[] = []
+  try {
+    docs = JSON.parse(fs.readFileSync(metaFile, 'utf8'))
+  } catch {}
+  docs.push({
+    id,
+    title: clean.replace(IMG_EXT, ''),
+    kind: 'image',
+    file,
+    size: buf.length,
+    createdAt: new Date().toISOString()
+  })
+  fs.writeFileSync(metaFile, JSON.stringify(docs, null, 2))
+  try {
+    fs.appendFileSync(
+      path.join(dir, 'activity.jsonl'),
+      JSON.stringify({ ts: new Date().toISOString(), actor: 'app', action: 'add_image', summary: `Image added: "${clean}"` }) + '\n'
+    )
+  } catch {}
 }
 
 const SESSIONS_DIR = path.join(DATA_DIR, 'sessions')

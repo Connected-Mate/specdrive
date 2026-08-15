@@ -7,6 +7,7 @@ import { ToastProvider } from './components/Toast'
 import { useAgents, useProjects } from './lib/useLive'
 import { SidebarIcon } from './components/Icons'
 import { EasterEgg } from './components/scene/EasterEgg'
+import { SearchOverlay } from './components/SearchOverlay'
 
 const SIDE_KEY = 'specdrive-sidebar'
 const NARROW = 1080
@@ -16,6 +17,7 @@ export default function App(): React.JSX.Element {
   const { agents, connect } = useAgents()
   const [openId, setOpenId] = useState<string | null>(null)
   const [eggOn, setEggOn] = useState(false)
+  const [searchOn, setSearchOn] = useState(false)
   const [sideOpen, setSideOpen] = useState<boolean>(() => {
     if (window.innerWidth < NARROW) return false
     return localStorage.getItem(SIDE_KEY) !== 'closed'
@@ -38,12 +40,16 @@ export default function App(): React.JSX.Element {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  // Cmd+\ toggles the sidebar, like native Mac apps.
+  // Cmd+\ toggles the sidebar; Cmd+F opens search — like native Mac apps.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey && e.key === '\\') {
         e.preventDefault()
         toggleSide()
+      }
+      if (e.metaKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        setSearchOn(true)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -106,6 +112,16 @@ export default function App(): React.JSX.Element {
         )}
         <GuideRail bundle={open ?? null} />
         {eggOn && <EasterEgg onClose={() => setEggOn(false)} />}
+        {searchOn && (
+          <SearchOverlay
+            projects={projects}
+            onClose={() => setSearchOn(false)}
+            onJump={(id) => {
+              setOpenId(id)
+              setSearchOn(false)
+            }}
+          />
+        )}
         <button
           className="side-toggle"
           title="Hide or show the sidebar (⌘\)"

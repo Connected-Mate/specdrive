@@ -147,6 +147,25 @@ export function SpecDetail({ spec, onClose }: { spec: Spec; onClose: () => void 
             </>
           )}
 
+          {spec.history && spec.history.length > 0 && (
+            <>
+              <h3 className="detail-section">What changed</h3>
+              <div className="history-list">
+                {[...spec.history].reverse().map((h, i) => (
+                  <div key={i} className="history-row">
+                    <span className="h-field">{h.field}</span>
+                    <div className="h-body">
+                      {h.why && <span className="h-why">{h.why}</span>}
+                      <span className="h-diff">
+                        <s>{h.from.slice(0, 90)}</s> → {h.to.slice(0, 120)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
           {spec.acceptance && (
             <div className="acceptance-note" style={{ marginTop: 16 }}>
               <strong>How we’ll know it works:</strong> {spec.acceptance}

@@ -10,6 +10,7 @@ import { CursorScene } from '@/components/scene/CursorScene'
 import { PlanDoc } from '@/components/PlanDoc'
 import { SpecDetail } from '@/components/SpecDetail'
 import { timeAgo } from '@/lib/useLive'
+import { useToast } from '@/components/Toast'
 
 const CATEGORY_LABEL: Record<SpecCategory, string> = {
   vision: 'Vision',
@@ -106,7 +107,7 @@ function DocumentsStrip({
             style={{ '--i': i } as React.CSSProperties}
             onClick={() => onOpen(d)}
           >
-            <span className="doc-icon">▤</span>
+            <span className="doc-icon">{d.kind === 'image' ? '🖼' : '▤'}</span>
             <span className="doc-name">{d.title}</span>
             <span className="doc-meta">
               {d.kind} · {(d.size / 1000).toFixed(1)}k
@@ -132,13 +133,33 @@ function BoardTab({
   const [openSpec, setOpenSpec] = useState<Spec | null>(null)
   const [openDoc, setOpenDoc] = useState<ProjectBundle['documents'][number] | null>(null)
   const [docText, setDocText] = useState<string>('')
+  const [imgSrc, setImgSrc] = useState<string>('')
   useEffect(() => {
     if (!openDoc) return
-    window.specdrive
-      .readDocument(bundle.project.id, openDoc.file)
-      .then(setDocText)
-      .catch(() => setDocText('Document not found.'))
+    if (openDoc.kind === 'image') {
+      window.specdrive.readImage(bundle.project.id, openDoc.file).then(setImgSrc).catch(() => setImgSrc(''))
+    } else {
+      window.specdrive
+        .readDocument(bundle.project.id, openDoc.file)
+        .then(setDocText)
+        .catch(() => setDocText('Document not found.'))
+    }
   }, [openDoc, bundle.project.id])
+
+  // Drop an image anywhere on the board → stored with the documents.
+  const onDrop = async (e: React.DragEvent): Promise<void> => {
+    e.preventDefault()
+    for (const f of Array.from(e.dataTransfer.files)) {
+      if (!/image\/(png|jpe?g|gif|webp)/.test(f.type)) continue
+      const buf = await f.arrayBuffer()
+      let bin = ''
+      const bytes = new Uint8Array(buf)
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+      }
+      await window.specdrive.addImage(bundle.project.id, f.name, btoa(bin))
+    }
+  }
   const groups = useMemo(() => {
     const byCat = new Map<SpecCategory, Spec[]>()
     for (const cat of SPEC_CATEGORIES) {
@@ -157,6 +178,28 @@ function BoardTab({
           <br />
           everything it learns lands here, live.
         </p>
+      </div>
+    )
+  }
+
+  if (openDoc && openDoc.kind === 'image') {
+    return (
+      <div className="spec-detail">
+        <div className="spec-detail-bar">
+          <div>
+            <span className="badge">Image</span>
+            <span className="badge" style={{ marginLeft: 6 }}>
+              {(openDoc.size / 1000).toFixed(0)} KB
+            </span>
+          </div>
+          <button className="pill pill-quiet" onClick={() => setOpenDoc(null)}>
+            Close
+          </button>
+        </div>
+        <div className="image-viewer">
+          <h2>{openDoc.title}</h2>
+          {imgSrc ? <img src={imgSrc} alt={openDoc.title} /> : <p className="empty">Loading…</p>}
+        </div>
       </div>
     )
   }
@@ -185,8 +228,11 @@ function BoardTab({
   }
 
   return (
-    <>
+    <div onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
     <DocumentsStrip bundle={bundle} onOpen={setOpenDoc} />
+    {!bundle.documents.length && (
+      <p className="drop-hint">Tip — drop screenshots or reference images anywhere here to keep them with the project.</p>
+    )}
     <div className="board">
       {[...groups.entries()].map(([cat, items]) => (
         <div className="board-group" key={cat}>
@@ -239,7 +285,7 @@ function BoardTab({
         </div>
       ))}
     </div>
-    </>
+    </div>
   )
 }
 
@@ -552,6 +598,23 @@ function ActivityTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   )
 }
 
+function ExportButton({ projectId }: { projectId: string }): React.JSX.Element {
+  const toast = useToast()
+  return (
+    <button
+      className="pill pill-quiet"
+      style={{ flex: 'none' }}
+      title="Export the whole project as a web page (printable to PDF)"
+      onClick={async () => {
+        const path = await window.specdrive.exportProject(projectId)
+        if (path) toast('Project exported — open the file and print to PDF if you like')
+      }}
+    >
+      Export
+    </button>
+  )
+}
+
 export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   const { project, specs, tasks, wireframes, activity } = bundle
   const [tab, setTab] = useState<Tab>('board')
@@ -606,6 +669,7 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
           <h1>{project.name}</h1>
           <span className="one-liner">{project.oneLiner}</span>
         </div>
+        <ExportButton projectId={project.id} />
         <div className="tabs">
           {tabs.map((t) => (
             <React.Fragment key={t.id}>

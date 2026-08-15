@@ -9,11 +9,17 @@ const api: SpecDriveApi = {
   deleteProject: (id: string) => ipcRenderer.invoke('projects:delete', id),
   detectAgents: () => ipcRenderer.invoke('agents:detect'),
   connectAgent: (id: AgentId) => ipcRenderer.invoke('agents:connect', id),
+  verifyAgent: (id: AgentId) => ipcRenderer.invoke('agents:verify', id),
   copyToClipboard: (text: string) => ipcRenderer.invoke('clipboard:copy', text),
   readWireframe: (projectId: string, file: string) =>
     ipcRenderer.invoke('wireframe:read', projectId, file),
   readDocument: (projectId: string, file: string) =>
     ipcRenderer.invoke('document:read', projectId, file),
+  readImage: (projectId: string, file: string) =>
+    ipcRenderer.invoke('document:read-image', projectId, file),
+  addImage: (projectId: string, name: string, dataBase64: string) =>
+    ipcRenderer.invoke('document:add-image', projectId, name, dataBase64),
+  exportProject: (projectId: string) => ipcRenderer.invoke('project:export', projectId),
   onProjectsChanged: (cb: () => void) => {
     const listener = (): void => cb()
     ipcRenderer.on('projects:changed', listener)

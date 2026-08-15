@@ -51,6 +51,8 @@ export interface Spec {
   challengeNote?: string
   /** Given/When/Then scenario(s), plain language — basis for acceptance tests */
   acceptance?: string
+  /** Change log: what changed, when, and why (filled by update_spec) */
+  history?: { ts: string; field: string; from: string; to: string; why?: string }[]
   tags: string[]
   createdAt: string
   updatedAt: string
@@ -193,7 +195,7 @@ export interface ProjectBundle {
 export interface SourceDocument {
   id: string
   title: string
-  kind: 'style-guide' | 'notes' | 'reference' | 'spec' | 'other'
+  kind: 'style-guide' | 'notes' | 'reference' | 'spec' | 'image' | 'other'
   /** Relative filename inside the project's documents/ dir */
   file: string
   /** Characters in the stored document */
@@ -233,6 +235,19 @@ export interface DetectedAgent {
   install: 'auto' | 'manual'
   /** Shown to the user when install is manual */
   manualCommand?: string
+  /** Where this agent keeps its MCP config */
+  configPath?: string
+  /** The exact command the agent will launch */
+  command?: string
+  args?: string[]
+}
+
+/** Result of actually launching the configured server and shaking hands. */
+export interface AgentVerification {
+  ok: boolean
+  /** Plain-words outcome, shown to the owner */
+  detail: string
+  checkedAt: string
 }
 
 // ---------- IPC contract (preload bridge) ----------
@@ -247,11 +262,19 @@ export interface SpecDriveApi {
   detectAgents(): Promise<DetectedAgent[]>
   /** Register the MCP server with an agent (writes its config). Returns updated agent. */
   connectAgent(id: AgentId): Promise<DetectedAgent>
+  /** REALLY verify: launch the configured command and do an MCP handshake */
+  verifyAgent(id: AgentId): Promise<import('./types').AgentVerification>
   copyToClipboard(text: string): Promise<void>
   /** Read a wireframe HTML file (sandbox-rendered by the app) */
   readWireframe(projectId: string, file: string): Promise<string>
   /** Read a stored source document, verbatim */
   readDocument(projectId: string, file: string): Promise<string>
+  /** Read a stored image document as a data URL */
+  readImage(projectId: string, file: string): Promise<string>
+  /** Store a dropped image into the project's documents */
+  addImage(projectId: string, name: string, dataBase64: string): Promise<void>
+  /** Export the whole project as a standalone HTML page (save dialog) */
+  exportProject(projectId: string): Promise<string | null>
   /** Subscribe to live project changes; returns unsubscribe */
   onProjectsChanged(cb: () => void): () => void
   openExternal(url: string): Promise<void>
