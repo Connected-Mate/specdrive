@@ -60,7 +60,10 @@ export function loadBundle(id: string): ProjectBundle | null {
     scenarios: readJson(path.join(dir, 'scenarios.json'), []),
     planDoc: readJson(path.join(dir, 'plan-doc.json'), null),
     documents: readJson(path.join(dir, 'documents.json'), []),
-    activity: readActivity(dir)
+    activity: readActivity(dir),
+    folder: (project as { folderId?: string }).folderId
+      ? readJson(path.join(DATA_DIR, 'folders', `${(project as { folderId?: string }).folderId}.json`), null)
+      : null
   } as ProjectBundle
 }
 

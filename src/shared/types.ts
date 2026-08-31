@@ -171,6 +171,23 @@ export interface ActivityEntry {
   summary: string
 }
 
+/** One standing rule of a folder — applies to every project inside. */
+export interface FolderRule {
+  title: string
+  content: string
+}
+
+/** A folder above projects: standing house rules (company charter, compliance…)
+ *  that every project placed inside must honor, in every phase. */
+export interface Folder {
+  id: string
+  name: string
+  description?: string
+  rules: FolderRule[]
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Project {
   id: string
   name: string
@@ -181,6 +198,8 @@ export interface Project {
   mode?: 'new' | 'existing'
   /** For existing apps: where the code lives */
   codebasePath?: string
+  /** Folder this project belongs to — its house rules apply */
+  folderId?: string
   phase: Phase
   /** Phase → ISO date it was completed */
   phaseHistory: Partial<Record<Phase, string>>
@@ -199,6 +218,8 @@ export interface ProjectBundle {
   planDoc: PlanDoc | null
   documents: SourceDocument[]
   activity: ActivityEntry[]
+  /** The folder the project belongs to, if any — resolved by the app */
+  folder?: Folder | null
 }
 
 /** Source material the owner handed over — stored complete, never summarized. */

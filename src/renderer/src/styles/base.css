@@ -458,6 +458,60 @@ a {
   color: var(--signal-blue);
 }
 
+/* Folder groups in the sidebar — house rules above projects */
+.side-folder {
+  margin: 2px 0 4px;
+}
+
+.side-folder-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 10px 3px;
+}
+
+.side-folder-name {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--graphite);
+}
+
+.side-folder-rules {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--smoke);
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 50px;
+  padding: 2px 7px;
+}
+
+.side-folder-head:hover .side-folder-name {
+  color: var(--ink);
+}
+
+.side-folder-detail {
+  padding: 4px 10px 6px;
+}
+
+.side-folder-detail .rule-intro {
+  margin: 0 0 4px;
+  font-size: 10.5px;
+  color: var(--smoke);
+  line-height: 1.45;
+  font-style: italic;
+}
+
+.side-folder-detail .rule-line {
+  margin: 2px 0;
+  font-size: 11px;
+  color: var(--graphite);
+  line-height: 1.45;
+}
+
 /* One plain sentence explaining the open tab */
 .tab-hint {
   margin: 0;

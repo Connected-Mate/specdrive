@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import type { AgentVerification, DetectedAgent, ProjectBundle } from '@shared/types'
+import type { AgentVerification, DetectedAgent, Folder, ProjectBundle } from '@shared/types'
 import { useToast } from './Toast'
 import { PHASE_COLOR } from '@/lib/phaseColors'
 
@@ -32,6 +32,7 @@ export function Sidebar({
   const [busy, setBusy] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [openAgent, setOpenAgent] = useState<DetectedAgent['id'] | 'other' | null>(null)
+  const [openRules, setOpenRules] = useState<string | null>(null)
   const [checks, setChecks] = useState<Record<string, AgentVerification | 'checking'>>({})
   const [mcp, setMcp] = useState<{ serverPath: string; nodeBin: string }>()
   useEffect(() => {
@@ -93,50 +94,95 @@ export function Sidebar({
 
       <div className="sidebar-label">Projects</div>
       <div className="sidebar-projects">
-        {projects.map((b, i) => {
-          const done = b.tasks.filter((t) => t.status === 'done').length
-          const confirming = confirmDelete === b.project.id
-          return (
-            <div
-              key={b.project.id}
-              role="button"
-              tabIndex={0}
-              className={`side-item${openId === b.project.id ? ' active' : ''}`}
-              style={{ '--i': i } as React.CSSProperties}
-              onClick={() => onSelect(b.project.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') onSelect(b.project.id)
-              }}
-            >
-              <span className="name">{b.project.name}</span>
-              <span className="sub">
-                <span
-                  className="phase-dot"
-                  style={{ '--phase-color': PHASE_COLOR[b.project.phase] } as React.CSSProperties}
-                />
-                {PHASE_SHORT[b.project.phase]}
-                {b.tasks.length > 0 && ` · ${done}/${b.tasks.length}`}
-              </span>
-              <button
-                className={`side-delete${confirming ? ' confirming' : ''}`}
-                aria-label={confirming ? `Really delete ${b.project.name}` : `Delete ${b.project.name}`}
-                onClick={async (e) => {
-                  e.stopPropagation()
-                  if (!confirming) {
-                    setConfirmDelete(b.project.id)
-                    return
-                  }
-                  setConfirmDelete(null)
-                  await window.specdrive.deleteProject(b.project.id)
-                  if (openId === b.project.id) onSelect(null)
-                  toast(`"${b.project.name}" moved to SpecDrive's trash`)
+        {(() => {
+          const groups = new Map<string, { folder: Folder; items: ProjectBundle[] }>()
+          const loose: ProjectBundle[] = []
+          for (const b of projects) {
+            if (b.folder) {
+              const g = groups.get(b.folder.id) ?? { folder: b.folder, items: [] }
+              g.items.push(b)
+              groups.set(b.folder.id, g)
+            } else loose.push(b)
+          }
+          let i = 0
+          const projectRow = (b: ProjectBundle): React.JSX.Element => {
+            const done = b.tasks.filter((t) => t.status === 'done').length
+            const confirming = confirmDelete === b.project.id
+            const idx = i++
+            return (
+              <div
+                key={b.project.id}
+                role="button"
+                tabIndex={0}
+                className={`side-item${openId === b.project.id ? ' active' : ''}`}
+                style={{ '--i': idx } as React.CSSProperties}
+                onClick={() => onSelect(b.project.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') onSelect(b.project.id)
                 }}
               >
-                {confirming ? 'Sure?' : '✕'}
-              </button>
-            </div>
+                <span className="name">{b.project.name}</span>
+                <span className="sub">
+                  <span
+                    className="phase-dot"
+                    style={{ '--phase-color': PHASE_COLOR[b.project.phase] } as React.CSSProperties}
+                  />
+                  {PHASE_SHORT[b.project.phase]}
+                  {b.tasks.length > 0 && ` · ${done}/${b.tasks.length}`}
+                </span>
+                <button
+                  className={`side-delete${confirming ? ' confirming' : ''}`}
+                  aria-label={confirming ? `Really delete ${b.project.name}` : `Delete ${b.project.name}`}
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    if (!confirming) {
+                      setConfirmDelete(b.project.id)
+                      return
+                    }
+                    setConfirmDelete(null)
+                    await window.specdrive.deleteProject(b.project.id)
+                    if (openId === b.project.id) onSelect(null)
+                    toast(`"${b.project.name}" moved to SpecDrive's trash`)
+                  }}
+                >
+                  {confirming ? 'Sure?' : '✕'}
+                </button>
+              </div>
+            )
+          }
+          return (
+            <>
+              {[...groups.values()].map(({ folder, items }) => (
+                <div key={folder.id} className="side-folder">
+                  <button
+                    className="side-folder-head"
+                    onClick={() => setOpenRules(openRules === folder.id ? null : folder.id)}
+                    title={folder.description}
+                  >
+                    <span className="side-folder-name">{folder.name}</span>
+                    {folder.rules.length > 0 && (
+                      <span className="side-folder-rules">
+                        {folder.rules.length} rule{folder.rules.length > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </button>
+                  {openRules === folder.id && folder.rules.length > 0 && (
+                    <div className="side-folder-detail">
+                      <p className="rule-intro">House rules — every project in this folder follows them:</p>
+                      {folder.rules.map((r) => (
+                        <p key={r.title} className="rule-line">
+                          • <strong>{r.title}</strong> — {r.content}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {items.map(projectRow)}
+                </div>
+              ))}
+              {loose.map(projectRow)}
+            </>
           )
-        })}
+        })()}
         <button className="side-new" onClick={() => onSelect(null)}>
           <span style={{ fontSize: 15, lineHeight: 1 }}>+</span> New project
         </button>

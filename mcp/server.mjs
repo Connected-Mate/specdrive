@@ -13,6 +13,7 @@ import crypto from 'node:crypto'
 
 const DATA_DIR = path.join(os.homedir(), '.specdrive')
 const PROJECTS_DIR = path.join(DATA_DIR, 'projects')
+const FOLDERS_DIR = path.join(DATA_DIR, 'folders')
 
 const PHASES = ['capture', 'challenge', 'research', 'risks', 'plan', 'build', 'done']
 const CATEGORIES = [
@@ -64,6 +65,47 @@ const PHASE_GUIDE_EXISTING = {
 
 function guideFor(project) {
   return project?.mode === 'existing' ? PHASE_GUIDE_EXISTING : PHASE_GUIDE
+}
+
+// ---------- folders: standing house rules above projects ----------
+// A folder groups projects under rules that apply to every one of them
+// (company charter, compliance, stack constraints). The rules travel in
+// every context-serving tool response so the agent can never lose them.
+
+function listFolderIds() {
+  fs.mkdirSync(FOLDERS_DIR, { recursive: true })
+  return fs
+    .readdirSync(FOLDERS_DIR)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => f.slice(0, -5))
+}
+
+function readFolder(id) {
+  return id ? readJson(path.join(FOLDERS_DIR, `${id}.json`), null) : null
+}
+
+/** Resolve a folder by id or exact name (case-insensitive). */
+function resolveFolder(ref) {
+  const norm = slugify(ref)
+  for (const id of listFolderIds()) {
+    if (id === ref || id === norm) return readFolder(id)
+  }
+  for (const id of listFolderIds()) {
+    const f = readFolder(id)
+    if (f && f.name.toLowerCase() === ref.toLowerCase()) return f
+  }
+  return null
+}
+
+/** The rules block injected wherever the agent gets project context. */
+function folderRulesBlock(project) {
+  const f = readFolder(project?.folderId)
+  if (!f) return ''
+  if (!f.rules?.length) return `\n\nThis project lives in folder "${f.name}" (no house rules set yet).`
+  return (
+    `\n\nHOUSE RULES — folder "${f.name}"${f.description ? ` (${f.description})` : ''}. These apply to EVERY phase, spec and task of this project and override your defaults:\n` +
+    f.rules.map((r) => `• ${r.title}: ${r.content}`).join('\n')
+  )
 }
 
 // ---------- tiny store ----------
@@ -350,7 +392,7 @@ server.registerTool(
       const found = resolveProject(project)
       if (found) {
         const mode = found.project.mode === 'existing' ? ' (EXISTING app — code is ground truth)' : ''
-        current = `\n\nCurrent project "${found.project.name}"${mode} is in phase "${found.project.phase}".\nWhat to do now → ${guideFor(found.project)[found.project.phase]}`
+        current = `\n\nCurrent project "${found.project.name}"${mode} is in phase "${found.project.phase}".\nWhat to do now → ${guideFor(found.project)[found.project.phase]}${folderRulesBlock(found.project)}`
       }
     }
     return ok(
@@ -359,6 +401,7 @@ server.registerTool(
         Object.entries(PHASE_GUIDE)
           .map(([p, g]) => `• ${p}: ${g}`)
           .join('\n') +
+        `\n\nFolders (above projects): a folder carries standing HOUSE RULES (company charter, compliance, mandated stack) that apply to every project inside. When the owner says "projects for X must always follow these rules", create_folder + set_folder_rules once, then place projects in it. The rules follow the agent into every phase automatically.` +
         `\n\nTwo project modes:\n- mode "new": a brand-new idea, blank page.\n- mode "existing": an app that ALREADY exists (code, docs, users). Same loop, different rules: the code is ground truth, docs are hints to verify against it, and the board specs the CHANGE plus a thin tagged "as-built" baseline of only the touched areas — never the whole codebase. Every phase guide adapts automatically.\n\nGround rules:\n- The board is the single source of truth; write EVERYTHING you learn or decide into it immediately (small focused specs, one topic each).\n- Follow the owner\'s lead: if they ask you to research, compare or check something, do it right away and write the findings to the board — do not push on with your own question list.\n- The owner hands you a document, a pasted text, a style guide, ANY material → store it COMPLETE and VERBATIM with add_document BEFORE anything else, then extract specs from it. Never summarize away what the owner gave you.\n- Never ask the owner a question the web or the board can answer; ask only what only they can know, one short question at a time, your recommended answer first.\n- Talk to the owner in plain words, never jargon.\n- Never invent progress: only mark tasks done after verifying they work.` +
         current
     )
@@ -374,12 +417,18 @@ server.registerTool(
   },
   async () => {
     const ids = listProjectIds()
-    if (!ids.length) return ok('No projects yet. Use create_project.')
+    const folderLines = listFolderIds().map((fid) => {
+      const f = readFolder(fid)
+      return `${fid} — "${f.name}" (${f.rules?.length ?? 0} house rule(s))${f.description ? ` — ${f.description}` : ''}`
+    })
+    const header = folderLines.length ? `FOLDERS (standing house rules):\n${folderLines.join('\n')}\n\nPROJECTS:\n` : ''
+    if (!ids.length) return ok(header + 'No projects yet. Use create_project.')
     const lines = ids.map((id) => {
       const p = readJson(path.join(projectDir(id), 'project.json'))
-      return `${id} — "${p.name}" (${p.phase}) — ${p.oneLiner}`
+      const f = readFolder(p.folderId)
+      return `${id} — "${p.name}" (${p.phase})${f ? ` [folder: ${f.name}]` : ''} — ${p.oneLiner}`
     })
-    return ok(lines.join('\n'))
+    return ok(header + lines.join('\n'))
   }
 )
 
@@ -393,6 +442,10 @@ server.registerTool(
       name: z.string().min(1).max(60).describe('Short product name'),
       one_liner: z.string().min(1).max(140).describe('One plain-English sentence: what it is, for whom'),
       idea: z.string().describe("The owner's raw idea (or the change they want), in their words"),
+      folder: z
+        .string()
+        .optional()
+        .describe('Folder id or name to place the project in — its house rules will apply. list_projects shows existing folders.'),
       mode: z
         .enum(['new', 'existing'])
         .optional()
@@ -403,8 +456,17 @@ server.registerTool(
         .describe('For mode "existing": absolute path to the existing codebase root')
     }
   },
-  async ({ name, one_liner, idea, mode, codebase_path }) => {
+  async ({ name, one_liner, idea, folder, mode, codebase_path }) => {
     ensureDirs()
+    let folderId
+    if (folder) {
+      const f = resolveFolder(folder)
+      if (!f) {
+        const ids = listFolderIds()
+        return fail(`Unknown folder "${folder}". Existing: ${ids.length ? ids.join(', ') : '(none — create_folder first, or omit folder)'}`)
+      }
+      folderId = f.id
+    }
     let id = slugify(name)
     if (fs.existsSync(projectDir(id))) id = `${id}-${uid().slice(0, 4)}`
     fs.mkdirSync(path.join(projectDir(id), 'wireframes'), { recursive: true })
@@ -413,6 +475,7 @@ server.registerTool(
       name,
       oneLiner: one_liner,
       idea,
+      folderId,
       mode: mode ?? 'new',
       codebasePath: codebase_path,
       phase: 'capture',
@@ -427,8 +490,95 @@ server.registerTool(
     logActivity(id, 'agent', 'create_project', `Project "${name}" created${mode === 'existing' ? ' (existing app)' : ''}`)
     return ok(
       `Project created (id: ${id}${mode === 'existing' ? ', mode: existing app' : ''}). It just appeared on the owner's SpecDrive board.\n` +
-        `Now: ${guideFor(project).capture}`
+        `Now: ${guideFor(project).capture}` +
+        folderRulesBlock(project)
     )
+  }
+)
+
+const RULES_SCHEMA = z
+  .array(
+    z.object({
+      title: z.string().min(1).max(80).describe('Short rule name, e.g. "Data stays in the EU"'),
+      content: z.string().min(1).max(2000).describe('The rule itself, precise and checkable')
+    })
+  )
+  .max(30)
+  .describe('Keep it short and sharp — agents follow a handful of precise rules far better than a wall of text.')
+
+server.registerTool(
+  'create_folder',
+  {
+    title: 'Create a folder (standing house rules above projects)',
+    description:
+      'A folder groups projects under standing rules that apply to EVERY project inside — company charter, compliance constraints, mandated stack, design rules. Create one when the owner says future projects for a given context must always follow specific rules. Then put projects in it (create_project folder param, or assign_project_folder).',
+    inputSchema: {
+      name: z.string().min(1).max(60).describe('e.g. "Acme internal tools"'),
+      description: z.string().max(200).optional().describe('One plain sentence: what kind of projects live here'),
+      rules: RULES_SCHEMA.optional()
+    }
+  },
+  async ({ name, description, rules }) => {
+    fs.mkdirSync(FOLDERS_DIR, { recursive: true })
+    let id = slugify(name)
+    if (fs.existsSync(path.join(FOLDERS_DIR, `${id}.json`))) id = `${id}-${uid().slice(0, 4)}`
+    const folder = { id, name, description, rules: rules ?? [], createdAt: now(), updatedAt: now() }
+    writeJson(path.join(FOLDERS_DIR, `${id}.json`), folder)
+    return ok(
+      `Folder "${name}" created (id: ${id}) with ${folder.rules.length} house rule(s). Every project placed in it will carry these rules through every phase. Assign projects with create_project's folder param or assign_project_folder; manage rules with set_folder_rules.`
+    )
+  }
+)
+
+server.registerTool(
+  'set_folder_rules',
+  {
+    title: "Set a folder's house rules",
+    description:
+      'Replace the standing rules of a folder — send the COMPLETE list each time. These rules are injected into every agent session working on any project of the folder.',
+    inputSchema: {
+      folder: z.string().describe('Folder id or name'),
+      rules: RULES_SCHEMA
+    }
+  },
+  async ({ folder, rules }) => {
+    const f = resolveFolder(folder)
+    if (!f) {
+      const ids = listFolderIds()
+      return fail(`Unknown folder "${folder}". Existing: ${ids.length ? ids.join(', ') : '(none — create_folder first)'}`)
+    }
+    f.rules = rules
+    f.updatedAt = now()
+    writeJson(path.join(FOLDERS_DIR, `${f.id}.json`), f)
+    return ok(`Folder "${f.name}" now has ${rules.length} house rule(s). They apply immediately to every project in it.`)
+  }
+)
+
+server.registerTool(
+  'assign_project_folder',
+  {
+    title: 'Put a project in a folder',
+    description: "Attach a project to a folder so the folder's house rules apply to it. Pass an empty folder string to detach.",
+    inputSchema: {
+      project: z.string(),
+      folder: z.string().describe('Folder id or name — empty string to remove the project from its folder')
+    }
+  },
+  async ({ project, folder }) => {
+    const { id, project: p } = requireProject(project)
+    if (!folder) {
+      touchProject(id, { folderId: undefined })
+      logActivity(id, 'agent', 'assign_folder', 'Project removed from its folder')
+      return ok(`Project "${p.name}" no longer belongs to a folder.`)
+    }
+    const f = resolveFolder(folder)
+    if (!f) {
+      const ids = listFolderIds()
+      return fail(`Unknown folder "${folder}". Existing: ${ids.length ? ids.join(', ') : '(none — create_folder first)'}`)
+    }
+    touchProject(id, { folderId: f.id })
+    logActivity(id, 'agent', 'assign_folder', `Project placed in folder "${f.name}"`)
+    return ok(`Project "${p.name}" is now in folder "${f.name}".${folderRulesBlock({ folderId: f.id })}`)
   }
 )
 
@@ -445,7 +595,8 @@ server.registerTool(
     const bundle = loadBundle(id)
     return ok(
       JSON.stringify(bundle, null, 2) +
-        `\n\nCurrent phase "${bundle.project.phase}" → ${guideFor(bundle.project)[bundle.project.phase]}`
+        `\n\nCurrent phase "${bundle.project.phase}" → ${guideFor(bundle.project)[bundle.project.phase]}` +
+        folderRulesBlock(bundle.project)
     )
   }
 )
@@ -1142,7 +1293,7 @@ server.registerTool(
     saveProject(id, p)
     logActivity(id, 'agent', 'set_phase', summary ? `${prev} → ${phase}: ${summary}` : `${prev} → ${phase}`)
     return ok(
-      `Phase is now "${phase}".\nWhat to do → ${guideFor(p)[phase]}\n\nOwner experience: give the owner the CHOICE, in plain words — (a) you continue right here into the "${phase}" step immediately (follow the guide above), or (b) for a fresher pair of eyes they open SpecDrive and paste the "${phase}" prompt into a new chat. Never force the app round-trip; if they say "go", keep working here.`
+      `Phase is now "${phase}".\nWhat to do → ${guideFor(p)[phase]}${folderRulesBlock(p)}\n\nOwner experience: give the owner the CHOICE, in plain words — (a) you continue right here into the "${phase}" step immediately (follow the guide above), or (b) for a fresher pair of eyes they open SpecDrive and paste the "${phase}" prompt into a new chat. Never force the app round-trip; if they say "go", keep working here.`
     )
   }
 )
@@ -1183,7 +1334,8 @@ server.registerTool(
         (p.mode === 'existing'
           ? ` This is an EXISTING app: re-run its own test suite after the change — nothing that worked before may break.`
           : '') +
-        ` Project phase: ${p.phase}.`
+        ` Project phase: ${p.phase}.` +
+        folderRulesBlock(p)
     )
   }
 )
@@ -1252,6 +1404,9 @@ server.registerTool(
         `4. USAGE SCENARIOS to act out on the real product, step by step (${scenarios.length}): ${scenarios.map((s) => `"${s.title}"`).join(', ') || 'none — that is itself a gap; write them with add_scenario'}. Each step's expectation must actually happen. Update each with update_scenario ("walked" or "gap_found" + gap_note).\n` +
         (bundle.project.mode === 'existing'
           ? `4b. REGRESSION (existing app): re-run the app's OWN test suite and re-exercise the main flows you did NOT touch — everything that worked before must still work. Any breakage → add_task immediately.\n`
+          : '') +
+        (readFolder(bundle.project.folderId)?.rules?.length
+          ? `4c. HOUSE RULES: verify the built product honors every rule of folder "${readFolder(bundle.project.folderId).name}", one by one:\n${readFolder(bundle.project.folderId).rules.map((r) => `   • ${r.title}: ${r.content}`).join('\n')}\n   Any rule not honored → add_task immediately.\n`
           : '') +
         `5. Every gap, mismatch or "mostly works" you find → specdrive add_task immediately (small, verifiable). Do not silently fix without a task; the owner follows progress through the board.\n` +
         `6. Specs the build revealed to be wrong or outdated → specdrive update_spec so the board stays the truth (${unconfirmed.length} spec(s) not yet confirmed).\n\n` +
