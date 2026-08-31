@@ -208,7 +208,7 @@ export async function verifyAgent(id: AgentId): Promise<{ ok: boolean; detail: s
       buf += String(d)
       if (buf.includes('"serverInfo"') && buf.includes('specdrive')) {
         clearTimeout(timer)
-        done(true, `Server responds — launched "${entry.command} ${entry.args.join(' ')}" and completed a real MCP handshake.`)
+        done(true, 'The link answers for real — this agent can reach your board.')
       }
     })
     child.on('error', (e) => {
@@ -243,7 +243,8 @@ export async function detectAgents(serverPath: string): Promise<DetectedAgent[]>
     {
       id: 'claude-code',
       name: 'Claude Code',
-      installed: claudeCli || exists(path.join(HOME, '.claude')),
+      // Real binary on PATH only — a leftover ~/.claude dir is not an install.
+      installed: claudeCli,
       connected: claudeCodeConnected(),
       install: 'auto',
       manualCommand: `claude mcp add specdrive --scope user -- node "${serverPath}"`
@@ -272,21 +273,24 @@ export async function detectAgents(serverPath: string): Promise<DetectedAgent[]>
     {
       id: 'antigravity',
       name: 'Antigravity',
-      installed: exists('/Applications/Antigravity.app') || exists(path.dirname(ANTIGRAVITY_MCP)),
+      // App bundle only. Never the config dir: connectAgent creates it ourselves,
+      // which made Antigravity look "installed" forever on machines without it.
+      installed: exists('/Applications/Antigravity.app'),
       connected: hasSpecdriveEntry(ANTIGRAVITY_MCP),
       install: 'auto'
     },
     {
       id: 'gemini-cli',
       name: 'Gemini CLI',
-      installed: geminiCli || exists(path.join(HOME, '.gemini')),
+      // Binary only — ~/.gemini also hosts Antigravity config, so the dir proves nothing.
+      installed: geminiCli,
       connected: hasSpecdriveEntry(GEMINI_CFG),
       install: 'auto'
     },
     {
       id: 'codex-cli',
       name: 'Codex CLI',
-      installed: codexCli || exists(path.join(HOME, '.codex')),
+      installed: codexCli,
       connected: codexConnected(),
       install: 'auto'
     }

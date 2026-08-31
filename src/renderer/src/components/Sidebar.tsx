@@ -31,8 +31,25 @@ export function Sidebar({
   const toast = useToast()
   const [busy, setBusy] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-  const [openAgent, setOpenAgent] = useState<DetectedAgent['id'] | null>(null)
+  const [openAgent, setOpenAgent] = useState<DetectedAgent['id'] | 'other' | null>(null)
   const [checks, setChecks] = useState<Record<string, AgentVerification | 'checking'>>({})
+  const [mcp, setMcp] = useState<{ serverPath: string; nodeBin: string }>()
+  useEffect(() => {
+    window.specdrive.getMcpInfo().then(setMcp).catch(() => {})
+  }, [])
+  const copyGenericConfig = (): void => {
+    const snippet = JSON.stringify(
+      {
+        mcpServers: {
+          specdrive: { command: mcp?.nodeBin ?? 'node', args: [mcp?.serverPath ?? '~/.specdrive/mcp/server.mjs'] }
+        }
+      },
+      null,
+      2
+    )
+    window.specdrive.copyToClipboard(snippet)
+    toast('MCP config copied — paste it into your agent’s MCP settings')
+  }
 
   const runCheck = async (id: DetectedAgent['id']): Promise<void> => {
     setChecks((c) => ({ ...c, [id]: 'checking' }))
@@ -131,7 +148,8 @@ export function Sidebar({
         </div>
         {installed.length === 0 && (
           <div style={{ padding: '2px 10px 6px', fontSize: 11.5, color: 'var(--smoke)', lineHeight: 1.45 }}>
-            None found yet. Install Claude Code or Cursor, then relaunch SpecDrive.
+            None found on this Mac yet. Install one (Claude Code, Cursor…) and relaunch SpecDrive — or
+            connect any other AI agent below.
           </div>
         )}
         {installed.map((a, i) => (
@@ -219,6 +237,34 @@ export function Sidebar({
           )}
           </div>
         ))}
+        <div
+          className="agent-row clickable"
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpenAgent(openAgent === 'other' ? null : 'other')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') setOpenAgent(openAgent === 'other' ? null : 'other')
+          }}
+        >
+          <span className="dot" />
+          <span className="name" style={{ color: 'var(--smoke)' }}>
+            Another agent?
+          </span>
+        </div>
+        {openAgent === 'other' && (
+          <div className="agent-detail">
+            <p className="ad-line">
+              Your board speaks MCP — an open standard. Any AI agent that supports it can connect, not
+              just the ones listed here.
+            </p>
+            <p className="ad-meta faded">
+              Copy this and paste it into your agent’s MCP settings (an entry named “specdrive”).
+            </p>
+            <button className="pill pill-quiet" style={{ marginTop: 6 }} onClick={copyGenericConfig}>
+              Copy the MCP config
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   )
