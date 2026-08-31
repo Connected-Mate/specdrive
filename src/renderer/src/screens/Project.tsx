@@ -147,17 +147,26 @@ function BoardTab({
   }, [openDoc, bundle.project.id])
 
   // Drop an image anywhere on the board → stored with the documents.
+  const toast = useToast()
   const onDrop = async (e: React.DragEvent): Promise<void> => {
     e.preventDefault()
     for (const f of Array.from(e.dataTransfer.files)) {
-      if (!/image\/(png|jpe?g|gif|webp)/.test(f.type)) continue
+      if (!/image\/(png|jpe?g|gif|webp)/.test(f.type) && !/\.(png|jpe?g|gif|webp)$/i.test(f.name)) {
+        toast(`"${f.name}" skipped — images only (png, jpg, gif, webp)`)
+        continue
+      }
+      if (f.size > 8 * 1024 * 1024) {
+        toast(`"${f.name}" is too large — 8 MB max`)
+        continue
+      }
       const buf = await f.arrayBuffer()
       let bin = ''
       const bytes = new Uint8Array(buf)
       for (let i = 0; i < bytes.length; i += 0x8000) {
         bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
       }
-      await window.specdrive.addImage(bundle.project.id, f.name, btoa(bin))
+      const err = await window.specdrive.addImage(bundle.project.id, f.name, btoa(bin))
+      toast(err || `"${f.name}" added to the project`)
     }
   }
   const groups = useMemo(() => {

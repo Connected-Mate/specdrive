@@ -23,7 +23,7 @@ h1{font-family:Georgia,serif;font-weight:400;font-size:44px;color:#0a0a0a;line-h
 h2{font-family:Georgia,serif;font-weight:400;font-size:26px;color:#0a0a0a;margin:44px 0 14px;border-bottom:1px solid #eee;padding-bottom:8px}
 h3{font-size:15px;color:#0a0a0a;margin:18px 0 4px}
 .muted{color:#636363;font-size:14px}
-.card{background:#fafafa;border-radius:14px;padding:14px 18px;margin:10px 0}
+.card{background:#fafafa;border-radius:14px;padding:14px 18px;margin:10px 0}\n.card p,.step{white-space:pre-wrap}
 .badge{display:inline-block;background:#eee;border-radius:99px;padding:2px 10px;font-size:11px;margin-right:6px}
 .step{margin:6px 0;padding-left:8px}
 .done{color:#007aff}

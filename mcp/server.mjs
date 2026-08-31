@@ -171,7 +171,9 @@ function loadBundle(id) {
   const dir = projectDir(id)
   return {
     project: readJson(path.join(dir, 'project.json')),
-    specs: readJson(path.join(dir, 'specs.json'), []),
+    specs: readJson(path.join(dir, 'specs.json'), []).map((sp) =>
+      sp.history ? { ...sp, history: undefined, historyCount: sp.history.length } : sp
+    ),
     tasks: readJson(path.join(dir, 'tasks.json'), []),
     wireframes: readJson(path.join(dir, 'wireframes.json'), []),
     flow: readJson(path.join(dir, 'flow.json'), null),
@@ -295,13 +297,20 @@ process.on('SIGTERM', () => {
   endSession()
   process.exit(0)
 })
+process.on('SIGHUP', () => {
+  endSession()
+  process.exit(0)
+})
+process.stdin.on('end', () => {
+  endSession()
+})
 
 // Wrap registerTool so every handler heartbeats without touching each one.
 const _registerTool = server.registerTool.bind(server)
 server.registerTool = (name, def, handler) =>
-  _registerTool(name, def, async (args) => {
+  _registerTool(name, def, async (args, extra) => {
     recordSession(name, args && typeof args.project === 'string' ? args.project : undefined)
-    return handler(args)
+    return handler(args, extra)
   })
 
 server.registerTool(
@@ -467,7 +476,7 @@ server.registerTool(
       project: z.string(),
       spec_id: z.string(),
       title: z.string().max(80).optional(),
-      content: z.string().optional(),
+      content: z.string().max(20000).optional(),
       status: z.enum(['draft', 'challenged', 'confirmed']).optional(),
       difficulty: z.number().int().min(1).max(5).optional(),
       challenge_note: z.string().optional().describe('Plain-words note: what was questioned or changed, and why')
@@ -484,7 +493,8 @@ server.registerTool(
       s.history = s.history ?? []
       const log = (field, from, to) => {
         if (from === to || to === undefined) return
-        s.history.push({ ts: now(), field, from: String(from ?? ''), to: String(to), why: challenge_note })
+        const clip = (v) => String(v ?? '').slice(0, 400)
+        s.history.push({ ts: now(), field, from: clip(from), to: clip(to), why: challenge_note })
         if (s.history.length > 20) s.history = s.history.slice(-20)
       }
       log('title', s.title, title)

@@ -112,39 +112,66 @@ export function readImage(projectId: string, file: string): string {
   }
 }
 
-export function addImage(projectId: string, name: string, dataBase64: string): void {
+export function addImage(projectId: string, name: string, dataBase64: string): string {
   const pid = safeId(projectId)
-  if (!pid) return
+  if (!pid) return 'Unknown project.'
   const clean = path.basename(name)
   const m = IMG_EXT.exec(clean)
-  if (!m) return
+  if (!m) return 'Only png, jpg, gif or webp images.'
   const buf = Buffer.from(dataBase64, 'base64')
-  if (buf.length > 8 * 1024 * 1024) return // 8MB cap
+  if (buf.length > 8 * 1024 * 1024) return 'Image too large — 8 MB max.'
   const id = crypto.randomBytes(5).toString('hex')
   const file = `${id}${m[0].toLowerCase()}`
   const dir = path.join(PROJECTS_DIR, pid)
   fs.mkdirSync(path.join(dir, 'documents'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'documents', file), buf)
   const metaFile = path.join(dir, 'documents.json')
-  let docs: unknown[] = []
+  // Same lock + atomic-write protocol as the MCP server — a concurrent
+  // add_document must never tear this file.
+  const lock = metaFile + '.lock'
+  const deadline = Date.now() + 3000
+  for (;;) {
+    try {
+      fs.mkdirSync(lock)
+      break
+    } catch {
+      if (Date.now() > deadline) {
+        try {
+          fs.rmdirSync(lock)
+        } catch {}
+      }
+      const wait = Date.now() + 15
+      while (Date.now() < wait) {} // ms-scale
+    }
+  }
   try {
-    docs = JSON.parse(fs.readFileSync(metaFile, 'utf8'))
-  } catch {}
-  docs.push({
-    id,
-    title: clean.replace(IMG_EXT, ''),
-    kind: 'image',
-    file,
-    size: buf.length,
-    createdAt: new Date().toISOString()
-  })
-  fs.writeFileSync(metaFile, JSON.stringify(docs, null, 2))
+    let docs: unknown[] = []
+    try {
+      docs = JSON.parse(fs.readFileSync(metaFile, 'utf8'))
+    } catch {}
+    docs.push({
+      id,
+      title: clean.replace(IMG_EXT, ''),
+      kind: 'image',
+      file,
+      size: buf.length,
+      createdAt: new Date().toISOString()
+    })
+    const tmp = `${metaFile}.${process.pid}-${crypto.randomBytes(3).toString('hex')}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify(docs, null, 2))
+    fs.renameSync(tmp, metaFile)
+  } finally {
+    try {
+      fs.rmdirSync(lock)
+    } catch {}
+  }
   try {
     fs.appendFileSync(
       path.join(dir, 'activity.jsonl'),
       JSON.stringify({ ts: new Date().toISOString(), actor: 'app', action: 'add_image', summary: `Image added: "${clean}"` }) + '\n'
     )
   } catch {}
+  return ''
 }
 
 const SESSIONS_DIR = path.join(DATA_DIR, 'sessions')

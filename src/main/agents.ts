@@ -101,7 +101,16 @@ function hasSpecdriveEntry(file: string): boolean {
 function addSpecdriveJsonEntry(file: string, serverPath: string, nodeBin: string): void {
   writeJsonMerged(file, (cfg) => {
     const c = cfg as McpServersConfig
-    c.mcpServers = { ...(c.mcpServers ?? {}), specdrive: { command: nodeBin, args: [serverPath] } }
+    c.mcpServers = {
+      ...(c.mcpServers ?? {}),
+      specdrive: {
+        command: nodeBin,
+        args: [serverPath],
+        // When the fallback is the Electron binary itself, this makes it act
+        // as plain Node; harmless for a real node binary.
+        env: { ELECTRON_RUN_AS_NODE: '1' }
+      }
+    }
   })
 }
 
@@ -185,7 +194,10 @@ export async function verifyAgent(id: AgentId): Promise<{ ok: boolean; detail: s
     }
     let child: ReturnType<typeof import('node:child_process').spawn>
     try {
-      child = spawn(entry.command, entry.args, { stdio: ['pipe', 'pipe', 'pipe'] })
+      child = spawn(entry.command, entry.args, {
+        stdio: ['pipe', 'pipe', 'ignore'],
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+      })
     } catch (e) {
       resolve({ ok: false, detail: `Could not launch "${entry.command}": ${String(e)}`, checkedAt })
       return
@@ -287,6 +299,10 @@ export async function detectAgents(serverPath: string): Promise<DetectedAgent[]>
     if (entry) {
       a.command = entry.command
       a.args = entry.args
+      // "Connected" must mean the configured server can actually exist:
+      // a stale path (moved repo, old install) is a dead link, not a link.
+      const target = entry.args[0]
+      if (a.connected && target && !exists(target)) a.connected = false
     }
   }
   return agents

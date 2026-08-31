@@ -148,9 +148,8 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
   const { project, specs } = bundle
   const projectSessions = sessions.filter(
     (x) =>
-      !x.project ||
       x.project === bundle.project.id ||
-      x.project.toLowerCase() === bundle.project.name.toLowerCase()
+      (x.project ?? '').toLowerCase() === bundle.project.name.toLowerCase()
   )
   const liveHere = projectSessions.length > 0
   const phasePrompt = PHASE_PROMPTS.find((p) => p.phase === project.phase) ?? PHASE_PROMPTS[0]

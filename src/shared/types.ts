@@ -272,7 +272,7 @@ export interface SpecDriveApi {
   /** Read a stored image document as a data URL */
   readImage(projectId: string, file: string): Promise<string>
   /** Store a dropped image into the project's documents */
-  addImage(projectId: string, name: string, dataBase64: string): Promise<void>
+  addImage(projectId: string, name: string, dataBase64: string): Promise<string>
   /** Export the whole project as a standalone HTML page (save dialog) */
   exportProject(projectId: string): Promise<string | null>
   /** Subscribe to live project changes; returns unsubscribe */
