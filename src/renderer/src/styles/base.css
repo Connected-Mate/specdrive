@@ -684,22 +684,50 @@ a {
 }
 
 .deep-dive-btn {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
   width: 100%;
   text-align: left;
-  border: 1.5px solid var(--ink);
-  border-radius: 14px;
-  padding: 10px 12px;
+  background: var(--paper);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-ring);
+  padding: 12px 14px;
+  margin-top: 10px;
+  transition: box-shadow 0.18s ease, transform 0.2s var(--ease-spring);
+}
+
+.deep-dive-btn .deep-dive-title {
   font-size: 12.5px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--ink);
-  margin-top: 8px;
-  transition: opacity 0.15s ease, transform 0.2s var(--ease-spring);
+  line-height: 1.35;
+}
+
+.deep-dive-btn .deep-dive-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--smoke);
+  transition: color 0.15s ease;
 }
 
 .deep-dive-btn:hover {
-  opacity: 0.65;
-  transform: translateX(2px);
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 5px var(--ash),
+    0 0 0 6px rgba(0, 0, 0, 0.06),
+    0 3px 8px rgba(0, 0, 0, 0.05);
+}
+
+.deep-dive-btn:hover .deep-dive-hint {
+  color: var(--signal-blue);
+}
+
+.deep-dive-btn:active {
+  transform: scale(0.985);
 }
 
 /* ============ Pills & badges ============ */

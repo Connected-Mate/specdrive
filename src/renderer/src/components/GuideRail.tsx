@@ -257,7 +257,11 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
                     toast('Deep-dive prompt copied')
                   }}
                 >
-                  {s.title}
+                  <span className="deep-dive-title">{s.title}</span>
+                  <span className="deep-dive-hint">
+                    <CopyIcon />
+                    Copy the deep-dive prompt
+                  </span>
                 </button>
               ))}
             </div>
