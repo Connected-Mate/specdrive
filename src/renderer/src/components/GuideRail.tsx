@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import type { LiveSession, ProjectBundle } from '@shared/types'
 import { PHASES } from '@shared/types'
-import { DEEP_DIVE_PROMPT, PHASE_PROMPTS, START_PROMPT, fillPrompt, type McpInfo } from '@shared/prompts'
+import { ADOPT_PROMPT, DEEP_DIVE_PROMPT, PHASE_PROMPTS, START_PROMPT, fillPrompt, type McpInfo } from '@shared/prompts'
 import { GlitchBadge } from './glitch/GlitchBadge'
 import { timeAgo } from '@/lib/useLive'
 import { CopyIcon, TickIcon } from './Icons'
@@ -122,8 +122,10 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
   const toast = useToast()
   const sessions = useLiveSessions()
   const mcp = useMcpInfo()
+  const [startMode, setStartMode] = useState<'new' | 'existing'>('new')
 
   if (!bundle) {
+    const starter = startMode === 'new' ? START_PROMPT : ADOPT_PROMPT
     return (
       <aside className="rail">
         <div className="rail-drag" />
@@ -131,14 +133,40 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
           <LiveSessionCard sessions={sessions} />
           <div className="next-step">
             <span className="rail-mini-label">{sessions.length ? 'In session' : 'Start here'}</span>
-            <h2>{sessions.length ? `${clientLabel(sessions[0].client)} is on it` : 'Tell your idea'}</h2>
+            <h2>
+              {sessions.length
+                ? `${clientLabel(sessions[0].client)} is on it`
+                : startMode === 'new'
+                  ? 'Tell your idea'
+                  : 'Improve an existing app'}
+            </h2>
+            <div className="start-mode-toggle" role="tablist" aria-label="What are you starting from?">
+              <button
+                role="tab"
+                aria-selected={startMode === 'new'}
+                className={`pill${startMode === 'new' ? ' pill-primary' : ''}`}
+                onClick={() => setStartMode('new')}
+              >
+                New idea
+              </button>
+              <button
+                role="tab"
+                aria-selected={startMode === 'existing'}
+                className={`pill${startMode === 'existing' ? ' pill-primary' : ''}`}
+                onClick={() => setStartMode('existing')}
+              >
+                I already have an app
+              </button>
+            </div>
             <p className="how">
               {sessions.length
                 ? 'An agent is already talking to the board — keep the conversation going in its chat. Starting a separate, brand-new chat? Paste the starter prompt there.'
-                : 'Copy this prompt, paste it into a connected AI agent (Claude Code, Cursor…), and describe what you want to build — in your own words. Your project will appear here on its own.'}
+                : startMode === 'new'
+                  ? 'Copy this prompt, paste it into a connected AI agent (Claude Code, Cursor…), and describe what you want to build — in your own words. Your project will appear here on its own.'
+                  : 'Your app already exists? Copy this prompt instead — the agent studies your real code and documents first, then plans your changes without breaking what works.'}
             </p>
-            <CopyButton text={fillPrompt(START_PROMPT, '', undefined, mcp)} label="Copy the starter prompt" />
-            <div className="prompt-peek">{fillPrompt(START_PROMPT, '', undefined, mcp)}</div>
+            <CopyButton text={fillPrompt(starter, '', undefined, mcp)} label="Copy the starter prompt" />
+            <div className="prompt-peek">{fillPrompt(starter, '', undefined, mcp)}</div>
           </div>
         </div>
       </aside>

@@ -43,6 +43,29 @@ const PHASE_GUIDE = {
   done: 'DONE: v1 is complete and converged. Fold any lasting decisions into the specs (update_spec, status "confirmed") so the board stays the truth. New ideas → new specs → new tasks → set_phase back to "build".'
 }
 
+// Existing-app (brownfield) projects follow the same loop with different rules:
+// the code is ground truth, docs are hints, and the board specs the CHANGE plus
+// a thin as-built baseline — never the whole codebase.
+const PHASE_GUIDE_EXISTING = {
+  capture:
+    'CAPTURE (existing app — the CODE is ground truth, docs are hints): 1) Read-only survey first: languages, frameworks, entry points, how to run it, test command — record as "tech" specs (source "code"). 2) Owner hands ANY doc → add_document COMPLETE and VERBATIM first, then VERIFY each claim against the code; where doc and code disagree, spec what the code actually does and note the mismatch. 3) Sample 5-10 representative files per touched area; capture the unusual/tribal conventions as specs — not framework boilerplate. 4) Write a THIN as-built baseline: ONLY the areas the change will touch, tag "as-built", source "code", confidence "confirmed" (read in code) or "inferred" (pattern guess); anything unverifiable → confidence "gap" + a "decisions" spec "Question: …". NEVER spec the whole codebase. 5) Interview the owner about what they want to CHANGE — those are the real specs (the delta). When the change is clear, set_phase "challenge".',
+  challenge:
+    'CHALLENGE (existing app): same skeptical review as usual — contradictions, vagueness, oversized scope — PLUS: challenge every "inferred" or "gap" confidence spec against the real code before trusting it. Scenarios must cover BOTH the new behavior AND regression paths: things that work today and must NOT break. Record v1 cuts as a "decisions" spec. Then set_phase "research".',
+  research:
+    'RESEARCH (existing app): research the CURRENT stack — known pitfalls, breaking changes, migration guides, how others added this feature to this stack. Do NOT research alternatives that imply a rewrite of working code. One finding per add_spec (category "research"), links included. End with "What we learned", then set_phase "risks".',
+  risks:
+    'RISKS (existing app): pre-mortem with regression front and center. Rate difficulty 1-5 on every change spec AND every touched as-built area. Difficulty 4-5 → "risks" spec with mitigation/fallback. Ask: what existing behavior could this silently break? Readiness verdict (PASS / CONCERNS / FAIL) as a "decisions" spec, then set_phase "plan".',
+  plan:
+    'PLAN (existing app): plan CHANGES to the existing code, respecting the as-built conventions — never a rewrite of untouched areas. First task is ALWAYS the safety net: app runs, existing tests green, before touching anything. Then set_plan_doc (include a "what stays untouched" callout), wireframes only for screens that change, set_flow if navigation changes, small ordered add_task steps (spikes first). Then set_phase "build".',
+  build:
+    'BUILD (existing app): strict loop as usual, PLUS: re-run the app\'s own test suite after every task; a task is only "done" when the new behavior works AND nothing that worked before broke. Never "improve" code outside the task\'s scope. Gaps → new tasks via check_convergence. Clean check earns set_phase "done".',
+  done: 'DONE (existing app): converged. Archive the delta: fold change specs into the as-built baseline (update_spec, tag "as-built", status "confirmed") so the board stays the app\'s living truth for the NEXT change. New ideas → new specs → new tasks → set_phase back to "build".'
+}
+
+function guideFor(project) {
+  return project?.mode === 'existing' ? PHASE_GUIDE_EXISTING : PHASE_GUIDE
+}
+
 // ---------- tiny store ----------
 
 function ensureDirs() {
@@ -326,7 +349,8 @@ server.registerTool(
     if (project) {
       const found = resolveProject(project)
       if (found) {
-        current = `\n\nCurrent project "${found.project.name}" is in phase "${found.project.phase}".\nWhat to do now → ${PHASE_GUIDE[found.project.phase]}`
+        const mode = found.project.mode === 'existing' ? ' (EXISTING app — code is ground truth)' : ''
+        current = `\n\nCurrent project "${found.project.name}"${mode} is in phase "${found.project.phase}".\nWhat to do now → ${guideFor(found.project)[found.project.phase]}`
       }
     }
     return ok(
@@ -335,7 +359,7 @@ server.registerTool(
         Object.entries(PHASE_GUIDE)
           .map(([p, g]) => `• ${p}: ${g}`)
           .join('\n') +
-        `\n\nGround rules:\n- The board is the single source of truth; write EVERYTHING you learn or decide into it immediately (small focused specs, one topic each).\n- Follow the owner\'s lead: if they ask you to research, compare or check something, do it right away and write the findings to the board — do not push on with your own question list.\n- The owner hands you a document, a pasted text, a style guide, ANY material → store it COMPLETE and VERBATIM with add_document BEFORE anything else, then extract specs from it. Never summarize away what the owner gave you.\n- Never ask the owner a question the web or the board can answer; ask only what only they can know, one short question at a time, your recommended answer first.\n- Talk to the owner in plain words, never jargon.\n- Never invent progress: only mark tasks done after verifying they work.` +
+        `\n\nTwo project modes:\n- mode "new": a brand-new idea, blank page.\n- mode "existing": an app that ALREADY exists (code, docs, users). Same loop, different rules: the code is ground truth, docs are hints to verify against it, and the board specs the CHANGE plus a thin tagged "as-built" baseline of only the touched areas — never the whole codebase. Every phase guide adapts automatically.\n\nGround rules:\n- The board is the single source of truth; write EVERYTHING you learn or decide into it immediately (small focused specs, one topic each).\n- Follow the owner\'s lead: if they ask you to research, compare or check something, do it right away and write the findings to the board — do not push on with your own question list.\n- The owner hands you a document, a pasted text, a style guide, ANY material → store it COMPLETE and VERBATIM with add_document BEFORE anything else, then extract specs from it. Never summarize away what the owner gave you.\n- Never ask the owner a question the web or the board can answer; ask only what only they can know, one short question at a time, your recommended answer first.\n- Talk to the owner in plain words, never jargon.\n- Never invent progress: only mark tasks done after verifying they work.` +
         current
     )
   }
@@ -364,14 +388,22 @@ server.registerTool(
   {
     title: 'Create a project',
     description:
-      'Create a new SpecDrive project. Do this once, right after the owner describes their idea.',
+      'Create a new SpecDrive project. Do this once, right after the owner describes their idea. If the owner is talking about an app that ALREADY exists (code, docs, users), set mode "existing" — the whole workflow adapts.',
     inputSchema: {
       name: z.string().min(1).max(60).describe('Short product name'),
       one_liner: z.string().min(1).max(140).describe('One plain-English sentence: what it is, for whom'),
-      idea: z.string().describe("The owner's raw idea, in their words")
+      idea: z.string().describe("The owner's raw idea (or the change they want), in their words"),
+      mode: z
+        .enum(['new', 'existing'])
+        .optional()
+        .describe('"new" (default) = brand-new idea. "existing" = the app already exists; the agent surveys the real code first and specs changes against it.'),
+      codebase_path: z
+        .string()
+        .optional()
+        .describe('For mode "existing": absolute path to the existing codebase root')
     }
   },
-  async ({ name, one_liner, idea }) => {
+  async ({ name, one_liner, idea, mode, codebase_path }) => {
     ensureDirs()
     let id = slugify(name)
     if (fs.existsSync(projectDir(id))) id = `${id}-${uid().slice(0, 4)}`
@@ -381,6 +413,8 @@ server.registerTool(
       name,
       oneLiner: one_liner,
       idea,
+      mode: mode ?? 'new',
+      codebasePath: codebase_path,
       phase: 'capture',
       phaseHistory: {},
       createdAt: now(),
@@ -390,10 +424,10 @@ server.registerTool(
     writeJson(path.join(projectDir(id), 'specs.json'), [])
     writeJson(path.join(projectDir(id), 'tasks.json'), [])
     writeJson(path.join(projectDir(id), 'wireframes.json'), [])
-    logActivity(id, 'agent', 'create_project', `Project "${name}" created`)
+    logActivity(id, 'agent', 'create_project', `Project "${name}" created${mode === 'existing' ? ' (existing app)' : ''}`)
     return ok(
-      `Project created (id: ${id}). It just appeared on the owner's SpecDrive board.\n` +
-        `Now: ${PHASE_GUIDE.capture}`
+      `Project created (id: ${id}${mode === 'existing' ? ', mode: existing app' : ''}). It just appeared on the owner's SpecDrive board.\n` +
+        `Now: ${guideFor(project).capture}`
     )
   }
 )
@@ -411,7 +445,7 @@ server.registerTool(
     const bundle = loadBundle(id)
     return ok(
       JSON.stringify(bundle, null, 2) +
-        `\n\nCurrent phase "${bundle.project.phase}" → ${PHASE_GUIDE[bundle.project.phase]}`
+        `\n\nCurrent phase "${bundle.project.phase}" → ${guideFor(bundle.project)[bundle.project.phase]}`
     )
   }
 )
@@ -438,10 +472,18 @@ server.registerTool(
         .optional()
         .describe(
           'How we will know it works: short Given/When/Then scenario(s), plain language. Becomes the basis for real acceptance tests during build.'
-        )
+        ),
+      source: z
+        .enum(['owner', 'code', 'doc', 'web', 'inference'])
+        .optional()
+        .describe('Where this fact comes from: the owner said it, read in the code, from a stored doc, from web research, or your own inference.'),
+      confidence: z
+        .enum(['confirmed', 'inferred', 'gap'])
+        .optional()
+        .describe('Existing apps: "confirmed" = verified in the code, "inferred" = pattern guess not yet verified, "gap" = unknown, needs the code or the owner. NEVER present an inference as fact.')
     }
   },
-  async ({ project, category, title, content, tags, difficulty, acceptance }) => {
+  async ({ project, category, title, content, tags, difficulty, acceptance, source, confidence }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
     const spec = {
@@ -452,6 +494,8 @@ server.registerTool(
       status: 'draft',
       difficulty,
       acceptance,
+      source,
+      confidence,
       tags: tags ?? [],
       createdAt: now(),
       updatedAt: now()
@@ -479,10 +523,14 @@ server.registerTool(
       content: z.string().max(20000).optional(),
       status: z.enum(['draft', 'challenged', 'confirmed']).optional(),
       difficulty: z.number().int().min(1).max(5).optional(),
+      confidence: z
+        .enum(['confirmed', 'inferred', 'gap'])
+        .optional()
+        .describe('Upgrade after verifying against the real code: inferred/gap → confirmed'),
       challenge_note: z.string().optional().describe('Plain-words note: what was questioned or changed, and why')
     }
   },
-  async ({ project, spec_id, title, content, status, difficulty, challenge_note }) => {
+  async ({ project, spec_id, title, content, status, difficulty, confidence, challenge_note }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
     const spec = updateJson(path.join(dir, 'specs.json'), [], (specs) => {
@@ -501,10 +549,12 @@ server.registerTool(
       log('content', s.content, content)
       log('status', s.status, status)
       log('difficulty', s.difficulty, difficulty)
+      log('confidence', s.confidence, confidence)
       if (title !== undefined) s.title = title
       if (content !== undefined) s.content = content
       if (status !== undefined) s.status = status
       if (difficulty !== undefined) s.difficulty = difficulty
+      if (confidence !== undefined) s.confidence = confidence
       if (challenge_note !== undefined) s.challengeNote = challenge_note
       s.updatedAt = now()
       return s
@@ -576,10 +626,14 @@ server.registerTool(
       project: z.string(),
       task_id: z.string(),
       status: z.enum(['todo', 'in_progress', 'done', 'blocked']),
-      note: z.string().optional().describe('For done: what now works, in words a non-developer understands. For blocked: why.')
+      note: z.string().optional().describe('For done: what now works, in words a non-developer understands. For blocked: why.'),
+      proof: z
+        .string()
+        .optional()
+        .describe('REQUIRED for done: the evidence you verified it — the exact command/test you ran and what you observed (exit code, test output, what appeared on screen). "It should work" is not proof.')
     }
   },
-  async ({ project, task_id, status, note }) => {
+  async ({ project, task_id, status, note, proof }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
     const r = updateJson(path.join(dir, 'tasks.json'), [], (tasks) => {
@@ -593,6 +647,14 @@ server.registerTool(
       if (status === 'done' && !note) {
         return { err: 'A "done" task needs a note: one plain sentence describing what now works.' }
       }
+      if (status === 'done' && !proof) {
+        return {
+          err: 'A "done" task needs proof: what you RAN and what you OBSERVED (test output, exit code, what showed on screen). Verify for real, then call again with the proof field.'
+        }
+      }
+      if (task.status === 'done' && status !== 'done' && !note) {
+        return { err: `Task "${task.title}" is already done. Reopening it needs a note explaining what turned out wrong.` }
+      }
       if (status === 'done') {
         const openChildren = tasks.filter((t) => t.parentId === task.id && t.status !== 'done')
         if (openChildren.length) {
@@ -603,6 +665,7 @@ server.registerTool(
       }
       task.status = status
       if (note !== undefined) task.note = note
+      if (proof !== undefined) task.proof = proof
       task.updatedAt = now()
       const remaining = tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length
       const next = tasks.filter((t) => t.status === 'todo').sort((a, b) => a.order - b.order)[0]
@@ -990,11 +1053,58 @@ server.registerTool(
     inputSchema: {
       project: z.string(),
       phase: z.enum(PHASES),
-      summary: z.string().optional().describe('One plain-words sentence on what was accomplished in the finished phase')
+      summary: z.string().optional().describe('One plain-words sentence on what was accomplished in the finished phase'),
+      skip_reason: z
+        .string()
+        .optional()
+        .describe('Only when deliberately skipping ahead (e.g. a tiny quick fix that does not need the full loop): why the skipped phases are safe to skip. Recorded on the board for the owner.')
     }
   },
-  async ({ project, phase, summary }) => {
+  async ({ project, phase, summary, skip_reason }) => {
     const { id, project: p } = requireProject(project)
+    const dir = projectDir(id)
+    const prevIdx = PHASES.indexOf(p.phase)
+    const nextIdx = PHASES.indexOf(phase)
+
+    // Forward gates — the loop is enforced, not suggested. Loop-backs are always free.
+    if (nextIdx > prevIdx) {
+      if (nextIdx - prevIdx > 1 && !skip_reason) {
+        const skipped = PHASES.slice(prevIdx + 1, nextIdx).join(', ')
+        return fail(
+          `Cannot jump from "${p.phase}" to "${phase}" — that skips: ${skipped}. Either walk the phases in order, or (for a genuinely small change) call again with skip_reason explaining why skipping is safe; it will be recorded on the board.`
+        )
+      }
+      if (nextIdx > PHASES.indexOf('capture') && !readJson(path.join(dir, 'specs.json'), []).length) {
+        return fail('Cannot leave "capture": the board has zero specs. Write what you learned with add_spec first.')
+      }
+      if (
+        nextIdx > PHASES.indexOf('challenge') &&
+        !readJson(path.join(dir, 'scenarios.json'), []).length &&
+        !skip_reason
+      ) {
+        return fail(
+          'Cannot advance: no usage scenarios exist. Scenarios (add_scenario) are how holes get found before code — write 4-8 and walk them, or pass skip_reason if this change is genuinely too small to need them.'
+        )
+      }
+      if (phase === 'build' && !readJson(path.join(dir, 'tasks.json'), []).length) {
+        return fail('Cannot enter "build": the plan has zero tasks. Create the ordered task list with add_task first.')
+      }
+    }
+    if (skip_reason && nextIdx > prevIdx + 1) {
+      const skipped = PHASES.slice(prevIdx + 1, nextIdx).join(', ')
+      updateJson(path.join(dir, 'specs.json'), [], (specs) => {
+        specs.push({
+          id: uid(),
+          category: 'decisions',
+          title: `Skipped phases: ${skipped}`,
+          content: skip_reason,
+          status: 'draft',
+          tags: ['skip'],
+          createdAt: now(),
+          updatedAt: now()
+        })
+      })
+    }
     if (phase === 'done') {
       const tasks = readJson(path.join(projectDir(id), 'tasks.json'), [])
       const open = tasks.filter((t) => t.status !== 'done')
@@ -1020,7 +1130,7 @@ server.registerTool(
     saveProject(id, p)
     logActivity(id, 'agent', 'set_phase', summary ? `${prev} → ${phase}: ${summary}` : `${prev} → ${phase}`)
     return ok(
-      `Phase is now "${phase}".\nWhat to do → ${PHASE_GUIDE[phase]}\n\nOwner experience: give the owner the CHOICE, in plain words — (a) you continue right here into the "${phase}" step immediately (follow the guide above), or (b) for a fresher pair of eyes they open SpecDrive and paste the "${phase}" prompt into a new chat. Never force the app round-trip; if they say "go", keep working here.`
+      `Phase is now "${phase}".\nWhat to do → ${guideFor(p)[phase]}\n\nOwner experience: give the owner the CHOICE, in plain words — (a) you continue right here into the "${phase}" step immediately (follow the guide above), or (b) for a fresher pair of eyes they open SpecDrive and paste the "${phase}" prompt into a new chat. Never force the app round-trip; if they say "go", keep working here.`
     )
   }
 )
@@ -1057,7 +1167,11 @@ server.registerTool(
         (linked.length
           ? `Specs it implements:\n${linked.map((sp) => `--- ${sp.title} [${sp.category}]\n${sp.content}${sp.acceptance ? `\nHow we'll know it works: ${sp.acceptance}` : ''}`).join('\n')}`
           : 'No specs linked — re-read the board if unsure.') +
-        `\n\nDiscipline: set it "in_progress" first (update_task), build production-grade, VERIFY for real, then mark "done" with a plain-words note. Project phase: ${p.phase}.`
+        `\n\nDiscipline: set it "in_progress" first (update_task), build production-grade, VERIFY for real, then mark "done" with a plain-words note AND proof (what you ran, what you observed).` +
+        (p.mode === 'existing'
+          ? ` This is an EXISTING app: re-run its own test suite after the change — nothing that worked before may break.`
+          : '') +
+        ` Project phase: ${p.phase}.`
     )
   }
 )
@@ -1086,6 +1200,9 @@ server.registerTool(
     const orphanTasks = bundle.tasks.filter((t) => (t.specIds ?? []).some((sid) => !specIdSet.has(sid)))
     const draftScenarios = scenarios.filter((sc) => sc.status === 'draft')
     const gapScenarios = scenarios.filter((sc) => sc.status === 'gap_found')
+    const openQuestions = bundle.specs.filter((sp) => /^question:/i.test(sp.title) && sp.status !== 'confirmed')
+    const gapSpecs = bundle.specs.filter((sp) => sp.confidence === 'gap')
+    const unprovenDone = bundle.tasks.filter((t) => t.status === 'done' && !t.proof)
     const findings = []
     if (open.length) findings.push(`OPEN TASKS (${open.length}): ${open.map((t) => `"${t.title}" [${t.status}]`).join(', ')}`)
     if (uncoveredSpecs.length)
@@ -1097,6 +1214,12 @@ server.registerTool(
     if (gapScenarios.length)
       findings.push(`SCENARIOS WITH OPEN GAPS (${gapScenarios.length}): ${gapScenarios.map((sc) => `"${sc.title}"`).join(', ')}`)
     if (!scenarios.length) findings.push('NO USAGE SCENARIOS AT ALL — write them with add_scenario; converging without scenarios is not credible')
+    if (openQuestions.length)
+      findings.push(`UNRESOLVED QUESTIONS (${openQuestions.length}): ${openQuestions.map((sp) => `"${sp.title}"`).join(', ')} — resolve with the owner or confirm the recorded choice (update_spec status "confirmed")`)
+    if (gapSpecs.length)
+      findings.push(`SPECS STILL MARKED "gap" (${gapSpecs.length}): ${gapSpecs.map((sp) => `"${sp.title}"`).join(', ')} — verify against the real code/owner and upgrade confidence, or say why it stays unknown`)
+    if (unprovenDone.length)
+      findings.push(`DONE TASKS WITHOUT PROOF (${unprovenDone.length}): ${unprovenDone.map((t) => `"${t.title}"`).join(', ')} — re-verify each and record the evidence (update_task with proof)`)
 
     touchProject(id, { lastConvergenceAt: now() })
     logActivity(id, 'agent', 'check_convergence', findings.length ? `Convergence check: ${findings.length} finding group(s)` : 'Convergence check: computed clean')
@@ -1110,6 +1233,9 @@ server.registerTool(
         `2. For EVERY feature/design/tech/data spec, verify the built product actually honors it. Run the product, do not assume. Specs to walk: ${bundle.specs.filter((s) => ['features', 'design', 'tech', 'data'].includes(s.category)).map((s) => `"${s.title}"`).join(', ') || '(none)'}.\n` +
         `3. Acceptance scenarios to execute for real (${withAcceptance.length}): ${withAcceptance.map((s) => `"${s.title}"`).join(', ') || 'none recorded'}. Each must pass as written — ideally as an automated test.\n` +
         `4. USAGE SCENARIOS to act out on the real product, step by step (${scenarios.length}): ${scenarios.map((s) => `"${s.title}"`).join(', ') || 'none — that is itself a gap; write them with add_scenario'}. Each step's expectation must actually happen. Update each with update_scenario ("walked" or "gap_found" + gap_note).\n` +
+        (bundle.project.mode === 'existing'
+          ? `4b. REGRESSION (existing app): re-run the app's OWN test suite and re-exercise the main flows you did NOT touch — everything that worked before must still work. Any breakage → add_task immediately.\n`
+          : '') +
         `5. Every gap, mismatch or "mostly works" you find → specdrive add_task immediately (small, verifiable). Do not silently fix without a task; the owner follows progress through the board.\n` +
         `6. Specs the build revealed to be wrong or outdated → specdrive update_spec so the board stays the truth (${unconfirmed.length} spec(s) not yet confirmed).\n\n` +
         `If, and only if, steps 1-6 produce zero new tasks and zero scenario gaps: report "CONVERGED" to the owner in plain words and call set_phase to "done". Otherwise: build the new tasks, then run check_convergence again.`

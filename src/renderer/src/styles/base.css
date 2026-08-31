@@ -627,6 +627,23 @@ a {
   margin-top: 14px;
 }
 
+/* Start-mode toggle: new idea vs existing app */
+.start-mode-toggle {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 8px;
+}
+
+.rail .start-mode-toggle .pill,
+.rail .start-mode-toggle .pill-primary {
+  width: auto;
+  flex: 1;
+  justify-content: center;
+  margin-top: 0;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
 .prompt-peek {
   margin-top: 12px;
   background: var(--ash);

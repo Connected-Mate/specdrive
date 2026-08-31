@@ -51,6 +51,10 @@ export interface Spec {
   challengeNote?: string
   /** Given/When/Then scenario(s), plain language — basis for acceptance tests */
   acceptance?: string
+  /** Where this fact comes from (existing-app mode especially) */
+  source?: 'owner' | 'code' | 'doc' | 'web' | 'inference'
+  /** How trustworthy: verified in code / pattern guess / unknown */
+  confidence?: 'confirmed' | 'inferred' | 'gap'
   /** Change log: what changed, when, and why (filled by update_spec) */
   history?: { ts: string; field: string; from: string; to: string; why?: string }[]
   tags: string[]
@@ -72,6 +76,8 @@ export interface Task {
   parentId?: string
   /** Note the AI leaves when completing/blocking the task */
   note?: string
+  /** Evidence of verification recorded at "done": what was run, what was observed */
+  proof?: string
   createdAt: string
   updatedAt: string
 }
@@ -171,6 +177,10 @@ export interface Project {
   oneLiner: string
   /** The user's raw idea, as dictated to the agent */
   idea: string
+  /** "new" (default) = blank-page idea; "existing" = the app already exists, code is ground truth */
+  mode?: 'new' | 'existing'
+  /** For existing apps: where the code lives */
+  codebasePath?: string
   phase: Phase
   /** Phase → ISO date it was completed */
   phaseHistory: Partial<Record<Phase, string>>
