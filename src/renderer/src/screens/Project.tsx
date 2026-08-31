@@ -666,10 +666,20 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
     { id: 'board', label: 'Board', count: specs.length },
     { id: 'scenarios', label: 'Scenarios', count: bundle.scenarios.length },
     { id: 'sketches', label: 'Screens', count: wireframes.length },
-    { id: 'blueprint', label: 'Blueprint', count: bundle.planDoc ? 1 : 0 },
-    { id: 'plan', label: 'Plan', count: tasks.length, divider: true },
+    { id: 'blueprint', label: 'The plan', count: bundle.planDoc ? 1 : 0 },
+    { id: 'plan', label: 'Build steps', count: tasks.length, divider: true },
     { id: 'activity', label: 'Activity', count: activity.length }
   ]
+
+  // One plain sentence under the tabs so nobody gets lost between them.
+  const TAB_HINT: Record<Tab, string> = {
+    board: 'Everything we know and decided about your product — its memory, filled live by the AI.',
+    scenarios: 'Short stories of someone using your product, walked step by step to find holes before code.',
+    sketches: 'Rough sketches of each screen, and the map of how they link together.',
+    blueprint: 'The plan, readable like a magazine page: what we build, how, the decisions and the risks.',
+    plan: 'The ordered to-do list the AI follows while building — each step verified before it turns green.',
+    activity: 'The diary: every change the AI made to this project, most recent first.'
+  }
 
   return (
     <main className="content">
@@ -694,6 +704,7 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
           ))}
         </div>
       </div>
+      <p className="tab-hint">{TAB_HINT[tab]}</p>
       <div className="content-body">
         {tab === 'board' && (
           <BoardTab bundle={bundle} specs={specs} freshIds={freshIds} projectName={project.name} />

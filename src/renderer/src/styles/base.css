@@ -458,6 +458,16 @@ a {
   color: var(--signal-blue);
 }
 
+/* One plain sentence explaining the open tab */
+.tab-hint {
+  margin: 0;
+  padding: 6px 24px 0;
+  font-size: 11.5px;
+  color: var(--smoke);
+  line-height: 1.45;
+  flex: none;
+}
+
 /* The app's only scrollable region */
 .content-body {
   flex: 1;

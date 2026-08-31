@@ -37,7 +37,7 @@ const PHASE_GUIDE = {
   risks:
     'RISKS: pre-mortem. Rate spec difficulty 1-5 via update_spec. For difficulty 4-5, add a "risks" spec with mitigation/fallback. Flag topics deserving a dedicated deep-dive session. End with a readiness verdict (PASS / CONCERNS / FAIL) recorded as a "decisions" spec; only advance on PASS or owner-accepted CONCERNS. Then set_phase to "plan".',
   plan:
-    'PLAN: first author the visual plan document with set_plan_doc (narrative sections, decision/risk callouts, an architecture diagram, a trade-off table, open questions with recommended answers). Then sketch 3-6 core screens with add_wireframe, define the screen flow with set_flow, and create small ordered tasks with add_task (spikes for hard parts first, sub-steps via parent_task_id). Then set_phase to "build".',
+    'PLAN: first author the visual plan document with set_plan_doc (narrative sections, decision/risk callouts, an architecture diagram, a trade-off table, open questions with recommended answers). Then sketch 3-6 core screens with add_wireframe, define the screen flow with set_flow, and create small ordered tasks with add_task (spikes for hard parts first, sub-steps via parent_task_id). The plan MUST end with the production-quality tail: a testing task (acceptance scenarios become real tests), a "Security & privacy pass" task (secrets, injection, permissions, exposed data), and an error-handling/polish task — entering build is blocked without them. Then set_phase to "build".',
   build:
     'BUILD: strict loop — take first "todo" task, set "in_progress", re-read its specs, build production-grade, VERIFY it works, set "done" with a plain-words note. Blocked? mark "blocked" + note, move on. When the task list looks finished, call check_convergence and honestly compare code vs board; gaps become new tasks. Only a clean convergence check earns set_phase to "done".',
   done: 'DONE: v1 is complete and converged. Fold any lasting decisions into the specs (update_spec, status "confirmed") so the board stays the truth. New ideas → new specs → new tasks → set_phase back to "build".'
@@ -56,7 +56,7 @@ const PHASE_GUIDE_EXISTING = {
   risks:
     'RISKS (existing app): pre-mortem with regression front and center. Rate difficulty 1-5 on every change spec AND every touched as-built area. Difficulty 4-5 → "risks" spec with mitigation/fallback. Ask: what existing behavior could this silently break? Readiness verdict (PASS / CONCERNS / FAIL) as a "decisions" spec, then set_phase "plan".',
   plan:
-    'PLAN (existing app): plan CHANGES to the existing code, respecting the as-built conventions — never a rewrite of untouched areas. First task is ALWAYS the safety net: app runs, existing tests green, before touching anything. Then set_plan_doc (include a "what stays untouched" callout), wireframes only for screens that change, set_flow if navigation changes, small ordered add_task steps (spikes first). Then set_phase "build".',
+    'PLAN (existing app): plan CHANGES to the existing code, respecting the as-built conventions — never a rewrite of untouched areas. First task is ALWAYS the safety net: app runs, existing tests green, before touching anything. Then set_plan_doc (include a "what stays untouched" callout), wireframes only for screens that change, set_flow if navigation changes, small ordered add_task steps (spikes first). The plan MUST end with the production-quality tail: a testing task, a "Security & privacy pass" task on everything touched, and a regression/polish task — entering build is blocked without them. Then set_phase "build".',
   build:
     'BUILD (existing app): strict loop as usual, PLUS: re-run the app\'s own test suite after every task; a task is only "done" when the new behavior works AND nothing that worked before broke. Never "improve" code outside the task\'s scope. Gaps → new tasks via check_convergence. Clean check earns set_phase "done".',
   done: 'DONE (existing app): converged. Archive the delta: fold change specs into the as-built baseline (update_spec, tag "as-built", status "confirmed") so the board stays the app\'s living truth for the NEXT change. New ideas → new specs → new tasks → set_phase back to "build".'
@@ -1086,8 +1086,20 @@ server.registerTool(
           'Cannot advance: no usage scenarios exist. Scenarios (add_scenario) are how holes get found before code — write 4-8 and walk them, or pass skip_reason if this change is genuinely too small to need them.'
         )
       }
-      if (phase === 'build' && !readJson(path.join(dir, 'tasks.json'), []).length) {
-        return fail('Cannot enter "build": the plan has zero tasks. Create the ordered task list with add_task first.')
+      if (phase === 'build') {
+        const tasks = readJson(path.join(dir, 'tasks.json'), [])
+        if (!tasks.length) {
+          return fail('Cannot enter "build": the plan has zero tasks. Create the ordered task list with add_task first.')
+        }
+        const hasQuality = (re) => tasks.some((t) => re.test(`${t.title} ${t.detail ?? ''}`))
+        const missing = []
+        if (!hasQuality(/secur|privacy|vulnerab|owasp/i)) missing.push('a "Security & privacy pass" task (secrets, injection, permissions, exposed data)')
+        if (!hasQuality(/test/i)) missing.push('a testing task (acceptance scenarios turned into real tests)')
+        if (missing.length && !skip_reason) {
+          return fail(
+            `Cannot enter "build": the plan ships to production, so it must include ${missing.join(' and ')}. Add them with add_task (near the end of the plan), or pass skip_reason if this change genuinely cannot need them.`
+          )
+        }
       }
     }
     if (skip_reason && nextIdx > prevIdx + 1) {
@@ -1203,6 +1215,9 @@ server.registerTool(
     const openQuestions = bundle.specs.filter((sp) => /^question:/i.test(sp.title) && sp.status !== 'confirmed')
     const gapSpecs = bundle.specs.filter((sp) => sp.confidence === 'gap')
     const unprovenDone = bundle.tasks.filter((t) => t.status === 'done' && !t.proof)
+    const securityDone = bundle.tasks.some(
+      (t) => t.status === 'done' && /secur|privacy|vulnerab|owasp/i.test(`${t.title} ${t.detail ?? ''}`)
+    )
     const findings = []
     if (open.length) findings.push(`OPEN TASKS (${open.length}): ${open.map((t) => `"${t.title}" [${t.status}]`).join(', ')}`)
     if (uncoveredSpecs.length)
@@ -1220,6 +1235,8 @@ server.registerTool(
       findings.push(`SPECS STILL MARKED "gap" (${gapSpecs.length}): ${gapSpecs.map((sp) => `"${sp.title}"`).join(', ')} — verify against the real code/owner and upgrade confidence, or say why it stays unknown`)
     if (unprovenDone.length)
       findings.push(`DONE TASKS WITHOUT PROOF (${unprovenDone.length}): ${unprovenDone.map((t) => `"${t.title}"`).join(', ')} — re-verify each and record the evidence (update_task with proof)`)
+    if (!securityDone)
+      findings.push('NO COMPLETED SECURITY & PRIVACY PASS — a production build converges only after one: check secrets, injection, permissions, exposed data (add_task if missing)')
 
     touchProject(id, { lastConvergenceAt: now() })
     logActivity(id, 'agent', 'check_convergence', findings.length ? `Convergence check: ${findings.length} finding group(s)` : 'Convergence check: computed clean')
