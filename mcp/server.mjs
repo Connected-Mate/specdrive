@@ -49,9 +49,9 @@ const PHASE_GUIDE = {
     REVIEW_TAIL_RULE +
     ' Then set_phase to "build".',
   build:
-    'BUILD: strict loop — take first "todo" task, set "in_progress", re-read its specs, build production-grade, VERIFY it works, set "done" with a plain-words note. Blocked? mark "blocked" + note, move on. When the task list looks finished, call check_convergence and honestly compare code vs board; gaps become new tasks. ' +
+    'BUILD: strict loop — take first "todo" task, set "in_progress", re-read its specs, build production-grade, VERIFY it works, set "done" with a plain-words note. Blocked? mark "blocked" + note, move on. Attempt failed? update_task status "failed" with the error and a next_move — never grind the same way twice. When the task list looks finished, call check_convergence and honestly compare code vs board; gaps become new tasks. ' +
     REVIEW_TAIL_RULE +
-    ' Closing the project is blocked until that review task is done. Only a clean convergence check earns set_phase to "done".',
+    ' Closing the project is blocked until that review task is done. Only a clean convergence check earns set_phase to "done". The loop is NOT a straight line: when an attempt fails, say so with update_task status "failed" (note + next_move) instead of grinding — after two failures the board refuses another plain retry and you must split it, re-scope a dependency, reopen the spec, or ask the owner. Record what each finished step touched (update_task touches) so the board can tell which earlier verified steps a later change puts in doubt; when it flags one, re-run that check and answer with recheck_task ("holds" stops there, "broken" opens a fix). If building teaches you the plan itself is wrong, call raise_discovery rather than improvising.',
   done: 'DONE: v1 is complete, converged and independently reviewed. Fold any lasting decisions into the specs (update_spec, status "confirmed") so the board stays the truth. New ideas → new specs → new tasks → set_phase back to "build" — and the new plan ends with its own independent review task, done in a fresh session.'
 }
 
@@ -74,7 +74,7 @@ const PHASE_GUIDE_EXISTING = {
   build:
     'BUILD (existing app): strict loop as usual, PLUS: re-run the app\'s own test suite after every task; a task is only "done" when the new behavior works AND nothing that worked before broke. Never "improve" code outside the task\'s scope. Gaps → new tasks via check_convergence. ' +
     REVIEW_TAIL_RULE +
-    ' Clean check plus that review earns set_phase "done".',
+    ' Clean check plus that review earns set_phase "done". The loop is NOT a straight line: when an attempt fails, say so with update_task status "failed" (note + next_move) instead of grinding — after two failures the board refuses another plain retry and you must split it, re-scope a dependency, reopen the spec, or ask the owner. Record what each finished step touched (update_task touches) so the board can tell which earlier verified steps a later change puts in doubt; when it flags one, re-run that check and answer with recheck_task ("holds" stops there, "broken" opens a fix). If building teaches you the plan itself is wrong, call raise_discovery rather than improvising.',
   done: 'DONE (existing app): converged and independently reviewed. Archive the delta: fold change specs into the as-built baseline (update_spec, tag "as-built", status "confirmed") so the board stays the app\'s living truth for the NEXT change. New ideas → new specs → new tasks → set_phase back to "build".'
 }
 
@@ -270,6 +270,48 @@ function unmetDeps(task, tasks) {
   return (task.dependsOn ?? [])
     .map((d) => tasks.find((t) => t.id === d))
     .filter((d) => d && d.status !== 'done')
+}
+
+// ---------- rework: a "done" task is verified AS OF a moment, not forever ----------
+// When a later task changes something an earlier verified task depended on, the
+// earlier one becomes a CANDIDATE for a re-check — never "broken". Three honest
+// signals, one hop deep, never re-flagged for the same cause: that boundedness is
+// what keeps one change from reopening the whole board.
+
+function markStale(tasks, changed) {
+  const changedSpecs = new Set(changed.specIds ?? [])
+  const changedTouches = new Set((changed.touches ?? []).map((t) => t.toLowerCase().trim()))
+  const staled = []
+  for (const t of tasks) {
+    if (t.id === changed.id || t.status !== 'done' || t.stale) continue
+    if ((t.doneAt ?? t.updatedAt ?? '') >= (changed.doneAt ?? now())) continue // only earlier work
+    if (t.staleBecause === changed.id) continue // never twice for the same cause
+    let why = null
+    const sharedSpec = (t.specIds ?? []).find((sid) => changedSpecs.has(sid))
+    const sharedTouch = (t.touches ?? []).find((x) => changedTouches.has(x.toLowerCase().trim()))
+    if (sharedSpec) why = `both steps serve the same part of the plan`
+    else if (sharedTouch) why = `both steps changed ${sharedTouch}`
+    else if ((t.dependsOn ?? []).includes(changed.id)) why = `this step was built on top of it`
+    if (!why) continue
+    t.stale = true
+    t.staleSince = now()
+    t.staleBecause = changed.id
+    t.staleReason = `"${changed.title}" changed something here — ${why}.`
+    t.updatedAt = now()
+    staled.push(t)
+  }
+  return staled
+}
+
+function staleTasks(tasks) {
+  return tasks.filter((t) => t.stale && t.status === 'done')
+}
+
+/** Open rework = failed + stale. Past the budget, new feature work stops being served. */
+function reworkLoad(tasks) {
+  const open = tasks.filter((t) => t.status === 'failed' || (t.stale && t.status === 'done')).length
+  const cap = Math.min(8, Math.max(2, Math.ceil(tasks.length * 0.3)))
+  return { open, cap, over: open > cap }
 }
 
 function isReady(task, tasks) {
@@ -1043,6 +1085,8 @@ server.registerTool(
   async ({ project }) => {
     const { id } = requireProject(project)
     const bundle = loadBundle(id)
+    const staleFindings = staleTasks(bundle.tasks)
+    const failedFindings = bundle.tasks.filter((t) => t.status === 'failed')
     const comments = openComments(id)
     const guidance = guideFor(bundle.project)[bundle.project.phase]
     const structuredContent = {
@@ -1277,8 +1321,25 @@ server.registerTool(
     inputSchema: {
       project: z.string(),
       task_id: z.string(),
-      status: z.enum(['todo', 'in_progress', 'done', 'blocked']),
-      note: z.string().optional().describe('For done: what now works, in words a non-developer understands. For blocked: why.'),
+      status: z
+        .enum(['todo', 'in_progress', 'done', 'blocked', 'failed'])
+        .describe(
+          'in_progress when you start · done ONLY after verifying (note + proof) · failed when an attempt did not work (note + next_move required — this is normal, say so honestly) · blocked when something outside your control stops it.'
+        ),
+      note: z.string().optional().describe('For done: what now works, in plain words. For failed: what you tried AND the verbatim error. For blocked: why.'),
+      next_move: z
+        .enum(['retry_changed', 'split', 'rescope_deps', 'reopen_spec', 'ask_owner'])
+        .optional()
+        .describe(
+          'REQUIRED with status "failed": what you will do differently. "retry_changed" (a genuinely different approach) is refused after 2 failed attempts — then it must be split, rescope_deps, reopen_spec or ask_owner.'
+        ),
+      touches: z
+        .array(z.string().max(120))
+        .max(20)
+        .optional()
+        .describe(
+          'What this task actually changed — file paths or plain-word areas ("the payment flow"). Recorded on "done" so the board can tell which earlier verified steps a later change may have invalidated.'
+        ),
       proof: z
         .string()
         .optional()
@@ -1293,7 +1354,7 @@ server.registerTool(
     },
     annotations: UPDATES
   },
-  async ({ project, task_id, status, note, proof, depends_on }) => {
+  async ({ project, task_id, status, note, proof, next_move, touches, depends_on }) => {
     const { id, project: p } = requireProject(project)
     const dir = projectDir(id)
     // Stamp the commit the work was verified against, so a later session can
@@ -1342,18 +1403,58 @@ server.registerTool(
           }
         }
       }
+      // ---- failure path: an honest "it didn't work", with a forced change of approach
+      if (status === 'failed') {
+        if (!note) {
+          return { err: 'A "failed" task needs a note: what you tried AND the exact error you saw. Failing honestly is fine; failing silently is not.' }
+        }
+        if (!next_move) {
+          return { err: 'A "failed" task needs next_move: retry_changed, split, rescope_deps, reopen_spec or ask_owner. Say what you will do differently.' }
+        }
+        const attempts = task.attempts ?? []
+        const lastNote = attempts.length ? attempts[attempts.length - 1].note : null
+        if (next_move === 'retry_changed' && lastNote && lastNote.trim() === note.trim()) {
+          return { err: 'That is the same note as the last failed attempt — a retry must be a genuinely DIFFERENT approach, described differently. Change the approach, or pick split / rescope_deps / reopen_spec / ask_owner.' }
+        }
+        if (next_move === 'retry_changed' && attempts.length >= 1) {
+          return {
+            err: `"${task.title}" has already failed ${attempts.length} time(s). No more straight retries: split it into smaller steps (add_task with parent_task_id), rescope_deps, reopen_spec, or ask_owner. Pick one of those as next_move.`
+          }
+        }
+      }
+      // A task that failed twice cannot simply be restarted unchanged either.
+      if (status === 'in_progress' && (task.attempts?.length ?? 0) >= 2 && task.nextMove === 'retry_changed') {
+        return {
+          err: `"${task.title}" failed ${task.attempts.length} times already. Before working on it again, record how the plan changes: split it (add_task with parent_task_id), drop a dead dependency (update_task depends_on), reopen the spec, or ask the owner.`
+        }
+      }
       task.status = status
       if (note !== undefined) task.note = note
       if (proof !== undefined) task.proof = proof
+      if (touches !== undefined) task.touches = touches
+      if (status === 'failed') {
+        task.attempts = task.attempts ?? []
+        task.attempts.push({ ts: now(), note, nextMove: next_move })
+        task.nextMove = next_move
+      }
+      if (status === 'in_progress' && task.nextMove) task.nextMove = undefined
       if (status === 'done') {
         sessionTasksDone += 1
         sameTaskServes.delete(task.id) // completed — breaker counter resets
+        task.stale = undefined // finishing it clears any pending re-check
+        task.staleBecause = undefined
+        task.staleReason = undefined
       }
       if (status === 'in_progress') task.claimedBy = process.pid // ownership signal for parallel sessions
       if (status === 'in_progress' && !task.startedAt) task.startedAt = now()
+      let staled = []
       if (status === 'done') {
         task.doneAt = now()
         if (headRef) task.gitRef = headRef
+        // Verified-as-of, not verified-forever: a later change can invalidate an
+        // earlier check. Candidate impact only, one hop, never re-flagged for the
+        // same cause — that is what stops a single change reopening the board.
+        staled = markStale(tasks, task)
       }
       task.updatedAt = now()
       const remaining = tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length
@@ -1366,6 +1467,8 @@ server.registerTool(
         remaining,
         blocked,
         depsChanged: depends_on !== undefined,
+        attempts: task.attempts?.length ?? 0,
+        staled: staled.map((t) => ({ id: t.id, title: t.title })),
         next: next ? { title: next.title, id: next.id } : null
       }
     })
@@ -1377,6 +1480,9 @@ server.registerTool(
       'update_task',
       `Task "${r.title}" → ${status}${note ? ` — ${note}` : ''}${r.depsChanged ? ' (dependencies re-scoped)' : ''}`
     )
+    const staleNote = r.staled?.length
+      ? ` ${r.staled.length} earlier step(s) now need a quick re-check because of this change: ${r.staled.map((t) => `"${t.title}"`).join(', ')} — get_next_task will hand them to you first (recheck_task).`
+      : ''
     return ok(
       `Task "${r.title}" → ${status}. ${r.remaining} task(s) remaining` +
         (r.blocked ? `, ${r.blocked} of them still waiting on dependencies` : '') +
@@ -1385,9 +1491,162 @@ server.registerTool(
         (status === 'done' && !r.remaining
           ? ' All tasks complete — run check_convergence before declaring the project done.'
           : '') +
+        staleNote +
+        (status === 'failed'
+          ? ` Attempt ${r.attempts} recorded — ${r.attempts >= 2 ? 'no more plain retries: split it, re-scope a dependency, reopen the spec, or ask the owner.' : 'try a genuinely different approach next.'}`
+          : '') +
         (status === 'done' && !p.codebasePath
           ? ' Tip: call set_codebase_path so the board can watch the code for changes made behind its back.'
           : '')
+    )
+  }
+)
+
+server.registerTool(
+  'recheck_task',
+  {
+    title: 'Re-check a step a later change may have invalidated',
+    description:
+      'The board flags an earlier verified step as needing a re-check when a later step changed something it depended on. Re-run that step\'s check for real, then report: "holds" (still true — the flag clears and NOTHING further is reopened) or "broken" (it no longer works — a small fix task is created under it and the step reopens). This is how the loop goes BACKWARD honestly instead of pretending a straight line.',
+    inputSchema: {
+      project: z.string(),
+      task_id: z.string(),
+      outcome: z.enum(['holds', 'broken']),
+      proof: z
+        .string()
+        .describe('What you actually re-ran and observed. Same bar as marking done: no proof, no re-check.'),
+      fix_detail: z
+        .string()
+        .optional()
+        .describe('For "broken": what needs fixing, in plain words. Becomes a sub-step under the affected task.')
+    },
+    annotations: UPDATES
+  },
+  async ({ project, task_id, outcome, proof, fix_detail }) => {
+    const { id, project: p } = requireProject(project)
+    const dir = projectDir(id)
+    const headRef = gitHead(p.codebasePath)
+    const r = updateJson(path.join(dir, 'tasks.json'), [], (tasks) => {
+      const task = tasks.find((t) => t.id === task_id)
+      if (!task) return { err: `No task with id "${task_id}".` }
+      if (!task.stale) return { err: `"${task.title}" is not waiting for a re-check.` }
+      if (outcome === 'broken' && !fix_detail) {
+        return { err: 'A "broken" re-check needs fix_detail: what must be fixed, in plain words.' }
+      }
+      task.stale = undefined
+      task.staleSince = undefined
+      task.staleReason = undefined
+      task.recheckedAt = now()
+      task.recheckProof = proof
+      task.updatedAt = now()
+      if (outcome === 'holds') {
+        // Change pruning: it still holds, so nothing downstream is reopened.
+        if (headRef) task.gitRef = headRef
+        return { title: task.title, outcome, created: null }
+      }
+      task.reopenCount = (task.reopenCount ?? 0) + 1
+      const overCap = task.reopenCount > 2
+      const fix = {
+        id: uid(),
+        title: `Fix: ${task.title}`,
+        detail: fix_detail,
+        specIds: task.specIds ?? [],
+        status: 'todo',
+        order: (tasks.length ? Math.max(...tasks.map((t) => t.order ?? 0)) : 0) + 1,
+        parentId: task.parentId ? undefined : task.id, // one level deep only
+        createdAt: now(),
+        updatedAt: now()
+      }
+      tasks.push(fix)
+      task.status = 'todo'
+      task.doneAt = undefined
+      return { title: task.title, outcome, created: fix.title, reopenCount: task.reopenCount, overCap }
+    })
+    if (r.err) return fail(r.err)
+    touchProject(id)
+    logActivity(id, 'agent', 'recheck_task', `Re-check of "${r.title}": ${outcome}${r.created ? ` — added "${r.created}"` : ''}`)
+    return ok(
+      outcome === 'holds'
+        ? `"${r.title}" still holds — re-check cleared, and nothing else was reopened because of it.`
+        : `"${r.title}" no longer holds. It is open again and "${r.created}" was added under it.` +
+            (r.overCap
+              ? ` NOTE: this step has now been reopened ${r.reopenCount} times — stop and ask the owner how they want to handle it instead of trying again.`
+              : '')
+    )
+  }
+)
+
+server.registerTool(
+  'raise_discovery',
+  {
+    title: 'Something you learned mid-build changes the plan',
+    description:
+      'Building teaches things planning could not know. When you discover that a spec is wrong, impossible or incomplete, do NOT silently improvise and do NOT throw the plan away: raise it here. It writes the finding to the board, flags the specs it puts in doubt, and marks the affected verified steps for a re-check — while the project stays in "build". This is the loop back UP to the specs.',
+    inputSchema: {
+      project: z.string(),
+      finding: z.string().min(1).max(2000).describe('What you learned, in plain words the owner understands'),
+      task_id: z.string().optional().describe('The task you were building when you found it'),
+      invalidates_spec_ids: z.array(z.string()).max(10).optional().describe('Specs this finding puts in doubt'),
+      owner_decision_needed: z
+        .boolean()
+        .optional()
+        .describe('True when only the owner can settle it — records it as a "Question: …" the board refuses to close on')
+    },
+    annotations: WRITES
+  },
+  async ({ project, finding, task_id, invalidates_spec_ids, owner_decision_needed }) => {
+    const { id } = requireProject(project)
+    const dir = projectDir(id)
+    const specIds = invalidates_spec_ids ?? []
+    const title = owner_decision_needed
+      ? `Question: ${finding.slice(0, 60)}${finding.length > 60 ? '…' : ''}`
+      : `Discovered while building: ${finding.slice(0, 48)}${finding.length > 48 ? '…' : ''}`
+    updateJson(path.join(dir, 'specs.json'), [], (specs) => {
+      specs.push({
+        id: uid(),
+        category: 'decisions',
+        title,
+        content: finding,
+        status: 'draft',
+        source: 'code',
+        confidence: 'confirmed',
+        tags: ['discovery'],
+        createdAt: now(),
+        updatedAt: now()
+      })
+      // The specs it contradicts stop being trusted silently.
+      for (const sp of specs) {
+        if (specIds.includes(sp.id)) {
+          sp.status = 'challenged'
+          sp.challengeNote = `Building revealed: ${finding.slice(0, 300)}`
+          sp.confidence = 'gap'
+          sp.updatedAt = now()
+        }
+      }
+    })
+    const staled = updateJson(path.join(dir, 'tasks.json'), [], (tasks) => {
+      const hit = []
+      for (const t of tasks) {
+        if (t.status !== 'done' || t.stale) continue
+        if (!(t.specIds ?? []).some((sid) => specIds.includes(sid))) continue
+        t.stale = true
+        t.staleSince = now()
+        t.staleBecause = task_id ?? 'discovery'
+        t.staleReason = `What we learned while building changed this part of the plan.`
+        t.updatedAt = now()
+        hit.push(t.title)
+      }
+      return hit
+    })
+    touchProject(id)
+    logActivity(id, 'agent', 'raise_discovery', `Discovery: ${finding.slice(0, 140)}`)
+    return ok(
+      `Recorded on the board as "${title}".` +
+        (specIds.length ? ` ${specIds.length} spec(s) marked challenged — they are no longer treated as settled.` : '') +
+        (staled.length ? ` ${staled.length} finished step(s) now need a re-check: ${staled.map((t) => `"${t}"`).join(', ')} (recheck_task).` : '') +
+        (owner_decision_needed
+          ? ` This one needs the OWNER: tell them in plain words and wait — check_convergence will refuse to close while the question is open.`
+          : ` The plan stays as it is; keep building, and fix what the finding invalidated.`)
     )
   }
 )
@@ -1875,6 +2134,18 @@ server.registerTool(
         )
       }
       // A clean timestamp is not a clean check: the RESULTS gate closing too.
+      const staleOpen = staleTasks(tasks)
+      if (staleOpen.length) {
+        return fail(
+          `Cannot set phase "done": ${staleOpen.length} finished step(s) are waiting for a re-check after later changes (${staleOpen.slice(0, 3).map((t) => `"${t.title}"`).join(', ')}). Re-run each check and call recheck_task — a board that closes on stale checks is lying.`
+        )
+      }
+      const failedOpen = tasks.filter((t) => t.status === 'failed')
+      if (failedOpen.length) {
+        return fail(
+          `Cannot set phase "done": ${failedOpen.length} step(s) are in "failed" (${failedOpen.slice(0, 3).map((t) => `"${t.title}"`).join(', ')}). Resolve each one — retry differently, split it, re-scope it, or ask the owner.`
+        )
+      }
       const openC = openComments(id)
       if (openC.length) {
         return fail(
@@ -1989,6 +2260,10 @@ server.registerTool(
         })
         .optional(),
       budgetReached: z.boolean().optional().describe('True when this session hit its task budget — stop and hand off to a fresh session'),
+      needsRecheck: z.boolean().optional().describe('True when the served task is an earlier step waiting for a re-check'),
+      staleCount: z.number().int().optional(),
+      failedCount: z.number().int().optional(),
+      reworkBudgetReached: z.boolean().optional().describe('True when open rework exceeds the budget — no new feature work until it clears'),
       circuitBreaker: z.boolean().optional().describe('True when the same task keeps being served without completing — change approach, do not retry unchanged')
     },
     annotations: READ_ONLY
@@ -2023,6 +2298,48 @@ server.registerTool(
             `Report to the owner in plain words: what got built, what proof stands out, and that a FRESH session should continue (same autobuild prompt, it resumes at the exact next step).`
         ),
         structuredContent: { project: id, phase: p.phase, hasTask: false, task: null, budgetReached: true }
+      }
+    }
+    // Re-checks and failed work come BEFORE new features: the loop goes back up
+    // before it goes further forward.
+    const stale = staleTasks(tasks)
+    const failed = tasks.filter((t) => t.status === 'failed')
+    const rework = reworkLoad(tasks)
+    if (stale.length) {
+      const first = stale[0]
+      const shapeTask = (t) => ({
+        id: t.id, title: t.title, detail: t.detail ?? '', status: t.status, order: t.order ?? 0,
+        specIds: t.specIds ?? [], dependsOn: t.dependsOn ?? [], parentId: t.parentId ?? null,
+        startedAt: t.startedAt ?? null, doneAt: t.doneAt ?? null
+      })
+      return {
+        ...ok(
+          `RE-CHECK FIRST — "${first.title}" was verified earlier, but a later step changed something it relies on.\n` +
+            `Why: ${first.staleReason}\n` +
+            `Re-run its check for real, then call recheck_task with "holds" (still true — nothing else gets reopened) or "broken" (+ fix_detail).\n` +
+            (stale.length > 1 ? `${stale.length - 1} other step(s) are waiting for a re-check too.\n` : '') +
+            (rework.over
+              ? `\nREWORK BUDGET REACHED (${rework.open} open re-checks/failures, cap ${rework.cap}). Clear these before taking any new feature work; if they keep multiplying, stop and ask the owner.`
+              : '')
+        ),
+        structuredContent: {
+          project: id,
+          phase: p.phase,
+          hasTask: true,
+          task: shapeTask(first),
+          needsRecheck: true,
+          staleCount: stale.length,
+          failedCount: failed.length
+        }
+      }
+    }
+    if (rework.over) {
+      return {
+        ...ok(
+          `REWORK BUDGET REACHED — ${rework.open} step(s) are failed or waiting on a re-check (cap ${rework.cap}). ` +
+            `Do not start new feature work: finish or re-scope those first, and if they cannot be resolved, stop and ask the owner in plain words.`
+        ),
+        structuredContent: { project: id, phase: p.phase, hasTask: false, task: null, reworkBudgetReached: true }
       }
     }
     const drift = driftState(p, tasks)
@@ -2185,6 +2502,10 @@ server.registerTool(
       findings.push(`SPECS STILL MARKED "gap" (${gapSpecs.length}): ${gapSpecs.map((sp) => `"${sp.title}"`).join(', ')} — verify against the real code/owner and upgrade confidence, or say why it stays unknown`)
     if (unprovenDone.length)
       findings.push(`DONE TASKS WITHOUT PROOF (${unprovenDone.length}): ${unprovenDone.map((t) => `"${t.title}"`).join(', ')} — re-verify each and record the evidence (update_task with proof)`)
+    if (staleFindings.length)
+      findings.push(`STEPS NEEDING A RE-CHECK (${staleFindings.length}): ${staleFindings.map((t) => `"${t.title}"`).join(', ')} — later work changed something they relied on; re-run their checks (recheck_task) before claiming convergence`)
+    if (failedFindings.length)
+      findings.push(`FAILED STEPS (${failedFindings.length}): ${failedFindings.map((t) => `"${t.title}"`).join(', ')} — each needs a different approach, a split, a re-scope, or the owner`)
     if (!securityDone)
       findings.push('NO COMPLETED SECURITY & PRIVACY PASS — a production build converges only after one: check secrets, injection, permissions, exposed data (add_task if missing)')
     if (blockedByDeps.length)
