@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, clipboard } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, clipboard, Menu } from 'electron'
 import path from 'node:path'
 import chokidar from 'chokidar'
 import {
@@ -15,7 +15,7 @@ import {
 import { detectAgents, connectAgent, verifyAgent, mcpServerPath, nodeBinPath } from './agents'
 import { exportProject } from './exporter'
 import { readImage, addImage, addComment } from './store'
-import { initUpdater } from './updater'
+import { initUpdater, checkForUpdatesInteractive } from './updater'
 import { checkForNotifications } from './notify'
 import type { AgentId, OwnerComment } from '../shared/types'
 
@@ -120,8 +120,38 @@ function createWindow(): void {
   }
 }
 
+/** Default macOS menu plus an explicit "Check for Updates…" — an automatic
+ *  updater the user can't interrogate is indistinguishable from a broken one. */
+function buildMenu(): void {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        {
+          label: 'Check for Updates…',
+          click: () => {
+            void checkForUpdatesInteractive()
+          }
+        },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' }
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
 app.whenReady().then(() => {
   initUpdater()
+  buildMenu()
   ensureDataDirs()
   if (process.platform === 'darwin' && !app.isPackaged && app.dock) {
     const devIcon = path.resolve(__dirname, '..', '..', 'resources', 'icon.png')

@@ -1,6 +1,6 @@
 {
   "name": "specdrive",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "SpecDrive — spec-driven development, made visual and effortless for everyone",
   "main": "out/main/index.js",
   "type": "module",
