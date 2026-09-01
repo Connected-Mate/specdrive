@@ -1,6 +1,10 @@
 # SpecDrive
 
-**Your idea, built properly.** SpecDrive is a free Mac app that makes spec-driven development effortless for people who don't code.
+**Your idea, built properly.** SpecDrive is a free, open-source Mac app that makes spec-driven development effortless for people who don't code.
+
+**Download the app**: [specdrive website](https://connected-mate.github.io/specdrive-site/) · MIT licensed · built by [Connected Mate](https://github.com/Connected-Mate)
+
+Why an MCP and not a "skill"/prompt file? Prompts live in the agent's context and fade as it fills up — that's exactly when agents drift. SpecDrive puts the discipline in the *tools*: the to-do list is enforced, out-of-phase moves fail, "done" requires proof, and the board (not the context) carries the memory. Works with any MCP-capable agent, for any team.
 
 You describe what you want to build — in your own words. Your AI coding agent (Claude Code, Cursor, Windsurf, Gemini CLI, Codex CLI…) fills a beautiful live board with your project's specs, challenges them, researches them online, flags the genuinely hard parts, sketches the screens, then builds the product step by step — and you watch every card appear in real time.
 
@@ -28,7 +32,7 @@ npm run dist       # package a Mac app (dmg)
 
 ## Under the hood
 
-- **Electron + React + TypeScript** (electron-vite). Design system: Portal twilight-editorial (Perfectly Nineties display serif, single #007aff accent, pill shapes, glow-ring elevation).
+- **Electron + React + TypeScript** (electron-vite). Design system: twilight-editorial (display serif, single #007aff accent, pill shapes, glow-ring elevation). Note: the commercial display/UI fonts used in official builds are not in this repo — the app falls back to Georgia/SF Pro automatically.
 - **MCP server** (`mcp/server.mjs`, stdio, @modelcontextprotocol/sdk): tools `create_project`, `add_spec`, `update_spec`, `add_task`, `update_task`, `add_wireframe`, `set_phase`, `get_project`, `get_guidance`, `log_note`.
 - **Shared store**: plain JSON under `~/.specdrive/projects/<id>/` — the MCP server writes, the app watches (chokidar) and updates live. Deleting a project moves it to `~/.specdrive/trash`, never destroys it.
 - Wireframes are self-contained grayscale HTML files rendered in sandboxed iframes (scripts stripped server-side).

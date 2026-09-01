@@ -3,3 +3,16 @@ out/
 dist/
 *.log
 .DS_Store
+
+# Proprietary reference assets — kept locally, never published (commercial font
+# licenses / scraped reference art). The app falls back to Georgia/SF Pro.
+resources/fonts/perfectly-nineties.woff2
+resources/images/portal-hero-full.webp
+resources/images/robot-dusk.png
+resources/images/doodle-texture.webp
+src/renderer/public/fonts/perfectly-nineties.woff2
+src/renderer/public/fonts/ui-sans-400.woff2
+src/renderer/public/fonts/ui-sans-500.woff2
+src/renderer/public/fonts/ui-sans-600.woff2
+src/renderer/public/images/robot-dusk.png
+src/renderer/public/images/doodle-texture.webp
