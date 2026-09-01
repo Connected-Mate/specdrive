@@ -72,6 +72,14 @@ export interface Task {
   specIds: string[]
   status: TaskStatus
   order: number
+  /** Task ids that must be done before this one can start (graph, not just order) */
+  dependsOn?: string[]
+  /** When the agent set it in_progress (for time-per-task on the board) */
+  startedAt?: string
+  /** When it was verified done */
+  doneAt?: string
+  /** Git commit hash of the codebase when the task was completed — drift detection baseline */
+  gitRef?: string
   /** Parent task id — sub-steps nest under their parent in the plan */
   parentId?: string
   /** Note the AI leaves when completing/blocking the task */
@@ -171,6 +179,21 @@ export interface ActivityEntry {
   summary: string
 }
 
+/** A comment the OWNER leaves on a spec or task card in the app.
+ *  The agent reads open comments through MCP on its next pass and resolves them.
+ *  Stored per project in comments.json. */
+export interface OwnerComment {
+  id: string
+  /** What the comment is attached to */
+  target: { kind: 'spec' | 'task' | 'project'; id: string }
+  text: string
+  status: 'open' | 'resolved'
+  /** Set by the agent when resolving: what it did about it, plain words */
+  resolution?: string
+  createdAt: string
+  resolvedAt?: string
+}
+
 /** One standing rule of a folder — applies to every project inside. */
 export interface FolderRule {
   title: string
@@ -220,6 +243,8 @@ export interface ProjectBundle {
   activity: ActivityEntry[]
   /** The folder the project belongs to, if any — resolved by the app */
   folder?: Folder | null
+  /** Owner comments on cards — written by the app, resolved by the agent via MCP */
+  comments?: OwnerComment[]
 }
 
 /** Source material the owner handed over — stored complete, never summarized. */
