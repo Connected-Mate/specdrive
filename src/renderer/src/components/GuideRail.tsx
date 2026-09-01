@@ -3,7 +3,7 @@ import type { ActivityEntry, LiveSession, ProjectBundle } from '@shared/types'
 import { PHASES } from '@shared/types'
 import { ADOPT_PROMPT, AUTOBUILD_PROMPT, DEEP_DIVE_PROMPT, PHASE_PROMPTS, START_PROMPT, fillPrompt, type McpInfo } from '@shared/prompts'
 import { GlitchBadge } from './glitch/GlitchBadge'
-import { timeAgo } from '@/lib/useLive'
+import { clientLabel, timeAgo, useLiveSessions } from '@/lib/useLive'
 import { CopyIcon, TickIcon } from './Icons'
 import { useToast } from './Toast'
 import { PHASE_COLOR } from '@/lib/phaseColors'
@@ -63,43 +63,12 @@ function PromptPeek({ text }: { text: string }): React.JSX.Element {
   )
 }
 
-function useLiveSessions(): LiveSession[] {
-  const [sessions, setSessions] = useState<LiveSession[]>([])
-  useEffect(() => {
-    const refresh = (): void => {
-      window.specdrive.listSessions().then(setSessions).catch(() => {})
-    }
-    refresh()
-    const off = window.specdrive.onProjectsChanged(refresh)
-    const t = setInterval(refresh, 20000) // expire stale sessions even when quiet
-    return () => {
-      off()
-      clearInterval(t)
-    }
-  }, [])
-  return sessions
-}
-
 function useMcpInfo(): McpInfo | undefined {
   const [info, setInfo] = useState<McpInfo>()
   useEffect(() => {
     window.specdrive.getMcpInfo().then(setInfo).catch(() => {})
   }, [])
   return info
-}
-
-const CLIENT_LABEL: Record<string, string> = {
-  'claude-code': 'Claude Code',
-  claude: 'Claude Code',
-  cursor: 'Cursor',
-  'cursor-vscode': 'Cursor',
-  windsurf: 'Windsurf',
-  'gemini-cli': 'Gemini',
-  codex: 'Codex'
-}
-
-function clientLabel(raw: string): string {
-  return CLIENT_LABEL[raw.toLowerCase()] ?? raw
 }
 
 /** Under "X is on it" — the last few real actions, plus an honest odometer.

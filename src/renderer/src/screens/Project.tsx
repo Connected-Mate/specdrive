@@ -7,6 +7,7 @@ import { FlowMap, type FlowThumb } from '@/components/FlowMap'
 import { KitWireframe } from '@/components/wireframe-kit/KitWireframe'
 import type { PlanWireframeNode } from '@/components/wireframe-kit/types'
 import { CursorScene } from '@/components/scene/CursorScene'
+import { useSceneAgents } from '@/components/scene/useSceneAgents'
 import { PlanDoc } from '@/components/PlanDoc'
 import { SpecDetail } from '@/components/SpecDetail'
 import { OwnerNotes } from '@/components/OwnerNotes'
@@ -725,6 +726,7 @@ function ExportButton({ projectId }: { projectId: string }): React.JSX.Element {
 export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   const { project, specs, tasks, wireframes, activity } = bundle
   const [tab, setTab] = useState<Tab>('board')
+  const { agents: crew, spotlight } = useSceneAgents(bundle)
 
   // Highlight specs that appear while the screen is open — the live magic.
   const seen = useRef<Set<string> | null>(null)
@@ -783,8 +785,7 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
     <main className="content">
       <div className="content-head">
         <div className="content-title">
-          <h1>{project.name}</h1>
-          <span className="one-liner">{project.oneLiner}</span>
+          {bundle.folder && <span className="one-liner">{bundle.folder.name}</span>}
         </div>
         <ExportButton projectId={project.id} />
         <div className="tabs">
@@ -802,6 +803,13 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
           ))}
         </div>
       </div>
+      <CursorScene
+        variant="header"
+        word={project.name}
+        caption={project.oneLiner}
+        agents={crew}
+        spotlight={spotlight}
+      />
       <p className="tab-hint">{TAB_HINT[tab]}</p>
       <div className="content-body">
         {tab === 'board' && (

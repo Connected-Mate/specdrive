@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { DetectedAgent, ProjectBundle } from '@shared/types'
+import type { DetectedAgent, LiveSession, ProjectBundle } from '@shared/types'
 
 /** All projects, refreshed live whenever the MCP server writes to disk. */
 export function useProjects(): { projects: ProjectBundle[]; loaded: boolean } {
@@ -53,6 +53,40 @@ export function useAgents(): {
   )
 
   return { agents, connect, refresh }
+}
+
+/** The MCP sessions talking to the board right now, refreshed on every write
+ *  and every 20s so sessions that died quietly still expire. */
+export function useLiveSessions(): LiveSession[] {
+  const [sessions, setSessions] = useState<LiveSession[]>([])
+  useEffect(() => {
+    const refresh = (): void => {
+      window.specdrive.listSessions().then(setSessions).catch(() => {})
+    }
+    refresh()
+    const off = window.specdrive.onProjectsChanged(refresh)
+    const t = setInterval(refresh, 20000) // expire stale sessions even when quiet
+    return () => {
+      off()
+      clearInterval(t)
+    }
+  }, [])
+  return sessions
+}
+
+const CLIENT_LABEL: Record<string, string> = {
+  'claude-code': 'Claude Code',
+  claude: 'Claude Code',
+  cursor: 'Cursor',
+  'cursor-vscode': 'Cursor',
+  windsurf: 'Windsurf',
+  'gemini-cli': 'Gemini',
+  codex: 'Codex'
+}
+
+/** Raw MCP client id → the name the owner would recognise. */
+export function clientLabel(raw: string): string {
+  return CLIENT_LABEL[raw.toLowerCase()] ?? raw
 }
 
 export function timeAgo(iso: string): string {
