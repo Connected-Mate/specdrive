@@ -9,10 +9,12 @@ files:
 extraResources:
   - from: out/mcp
     to: mcp
+# Updates + downloads are served from the PUBLIC site repo — the app source
+# repo stays private, and a private feed would break auto-update for users.
 publish:
   provider: github
-  owner: Alex-Connected-Mate
-  repo: specdrive
+  owner: Connected-Mate
+  repo: specdrive-site
 mac:
   category: public.app-category.developer-tools
   target:
