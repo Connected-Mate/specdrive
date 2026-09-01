@@ -9,6 +9,7 @@ import type { PlanWireframeNode } from '@/components/wireframe-kit/types'
 import { CursorScene } from '@/components/scene/CursorScene'
 import { PlanDoc } from '@/components/PlanDoc'
 import { SpecDetail } from '@/components/SpecDetail'
+import { OwnerNotes } from '@/components/OwnerNotes'
 import { timeAgo } from '@/lib/useLive'
 import { useToast } from '@/components/Toast'
 
@@ -242,6 +243,9 @@ function BoardTab({
     {!bundle.documents.length && (
       <p className="drop-hint">Tip — drop screenshots or reference images anywhere here to keep them with the project.</p>
     )}
+    {!(bundle.comments ?? []).length && (
+      <p className="drop-hint">Click a card to leave a note — your agent reads it on its next pass.</p>
+    )}
     <div className="board">
       {[...groups.entries()].map(([cat, items]) => (
         <div className="board-group" key={cat}>
@@ -289,6 +293,11 @@ function BoardTab({
                   </span>
                 ))}
               </div>
+              <OwnerNotes
+                projectId={bundle.project.id}
+                target={{ kind: 'spec', id: s.id }}
+                comments={bundle.comments ?? []}
+              />
             </div>
           ))}
         </div>
@@ -298,6 +307,16 @@ function BoardTab({
   )
 }
 
+/** "4 min", "1h 12min", "under a min" — subtle, data not decoration. */
+function humanizeDuration(ms: number): string {
+  const totalMin = Math.round(ms / 60000)
+  if (totalMin < 1) return 'under a min'
+  if (totalMin < 60) return `${totalMin} min`
+  const h = Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  return m ? `${h}h ${m}min` : `${h}h`
+}
+
 function TaskRow({
   task,
   index,
@@ -305,7 +324,10 @@ function TaskRow({
   childCount,
   doneChildren,
   collapsed,
-  onToggle
+  onToggle,
+  waitsFor,
+  projectId,
+  comments
 }: {
   task: ProjectBundle['tasks'][number]
   index: number
@@ -314,7 +336,17 @@ function TaskRow({
   doneChildren?: number
   collapsed?: boolean
   onToggle?: () => void
+  waitsFor?: number
+  projectId: string
+  comments: ProjectBundle['comments']
 }): React.JSX.Element {
+  const duration =
+    task.status === 'done' && task.startedAt && task.doneAt
+      ? humanizeDuration(new Date(task.doneAt).getTime() - new Date(task.startedAt).getTime())
+      : task.status === 'in_progress' && task.startedAt
+        ? `running for ${humanizeDuration(Date.now() - new Date(task.startedAt).getTime())}`
+        : null
+
   return (
     <div
       className={`task-row ${task.status.replace('_', '-')}${sub ? ' sub' : ''}`}
@@ -326,6 +358,11 @@ function TaskRow({
       <div className="body">
         <div className="title-line">
           <span className="title">{task.title}</span>
+          {duration && (
+            <span className={`task-duration${task.status === 'in_progress' ? ' running' : ''}`}>
+              {duration}
+            </span>
+          )}
           {childCount ? (
             <button className="task-chevron" onClick={onToggle} aria-label="Toggle sub-steps">
               <span className="badge">
@@ -354,11 +391,15 @@ function TaskRow({
         </div>
         {task.status !== 'done' && <div className="detail">{task.detail}</div>}
         {task.note && <div className="note">{task.note}</div>}
-        {task.status === 'blocked' && (
-          <span className="badge" style={{ marginTop: 5 }}>
-            Blocked
-          </span>
-        )}
+        <div className="task-badges">
+          {task.status === 'blocked' && <span className="badge">Blocked</span>}
+          {!!waitsFor && (
+            <span className="badge waits-badge">
+              Waits for {waitsFor} step{waitsFor > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        <OwnerNotes projectId={projectId} target={{ kind: 'task', id: task.id }} comments={comments ?? []} />
       </div>
     </div>
   )
@@ -380,6 +421,16 @@ function BlueprintTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element 
 function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   const { tasks } = bundle
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+
+  // Keep "running for X min" ticking on in-progress steps even with no new events.
+  const [, forceTick] = useState(0)
+  const hasRunning = tasks.some((t) => t.status === 'in_progress')
+  useEffect(() => {
+    if (!hasRunning) return undefined
+    const t = setInterval(() => forceTick((n) => n + 1), 30000)
+    return () => clearInterval(t)
+  }, [hasRunning])
+
   if (!tasks.length) {
     return (
       <div className="empty">
@@ -400,6 +451,8 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
       else next.add(id)
       return next
     })
+  const waitsFor = (t: ProjectBundle['tasks'][number]): number =>
+    (t.dependsOn ?? []).filter((id) => tasks.find((x) => x.id === id)?.status !== 'done').length
 
   let row = 0
   return (
@@ -426,8 +479,22 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
               doneChildren={doneKids}
               collapsed={isCollapsed}
               onToggle={() => toggle(t.id)}
+              waitsFor={waitsFor(t)}
+              projectId={bundle.project.id}
+              comments={bundle.comments}
             />
-            {!isCollapsed && kids.map((k) => <TaskRow key={k.id} task={k} index={row++} sub />)}
+            {!isCollapsed &&
+              kids.map((k) => (
+                <TaskRow
+                  key={k.id}
+                  task={k}
+                  index={row++}
+                  sub
+                  waitsFor={waitsFor(k)}
+                  projectId={bundle.project.id}
+                  comments={bundle.comments}
+                />
+              ))}
           </React.Fragment>
         )
       })}

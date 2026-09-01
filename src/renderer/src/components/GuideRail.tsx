@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import type { LiveSession, ProjectBundle } from '@shared/types'
+import type { ActivityEntry, LiveSession, ProjectBundle } from '@shared/types'
 import { PHASES } from '@shared/types'
 import { ADOPT_PROMPT, DEEP_DIVE_PROMPT, PHASE_PROMPTS, START_PROMPT, fillPrompt, type McpInfo } from '@shared/prompts'
 import { GlitchBadge } from './glitch/GlitchBadge'
@@ -88,6 +88,41 @@ function clientLabel(raw: string): string {
   return CLIENT_LABEL[raw.toLowerCase()] ?? raw
 }
 
+/** Under "X is on it" — the last few real actions, plus an honest odometer.
+ *  No percentage bars: only facts the owner can check against the Activity tab. */
+function MilestoneFeed({
+  activity,
+  session
+}: {
+  activity: ActivityEntry[]
+  session: LiveSession
+}): React.JSX.Element | null {
+  if (!activity.length) return null
+  const recent = [...activity].reverse().slice(0, 3)
+  const since = new Date(session.startedAt).getTime()
+  const inSession = activity.filter((a) => new Date(a.ts).getTime() >= since).length
+  const startedLabel = new Date(session.startedAt).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+  return (
+    <div className="milestone-feed">
+      {recent.map((a, i) => (
+        <div key={i} className="milestone-row">
+          <span className="milestone-check">
+            <TickIcon size={9} />
+          </span>
+          <span className="milestone-what">{a.summary}</span>
+          <span className="milestone-time">{timeAgo(a.ts)}</span>
+        </div>
+      ))}
+      <div className="odometer">
+        {inSession} action{inSession === 1 ? '' : 's'} · started {startedLabel}
+      </div>
+    </div>
+  )
+}
+
 /** "An agent is talking to the board right now" — the glitch badge design. */
 function LiveSessionCard({ sessions }: { sessions: LiveSession[] }): React.JSX.Element | null {
   if (!sessions.length) return null
@@ -173,7 +208,7 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
     )
   }
 
-  const { project, specs } = bundle
+  const { project, specs, activity } = bundle
   const projectSessions = sessions.filter(
     (x) =>
       x.project === bundle.project.id ||
@@ -226,6 +261,7 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
         <div className="next-step">
           <span className="rail-mini-label">{liveHere ? 'In progress' : 'Your next step'}</span>
           <h2>{liveHere ? `${clientLabel(projectSessions[0].client)} is on it` : phasePrompt.title}</h2>
+          {liveHere && <MilestoneFeed activity={activity} session={projectSessions[0]} />}
           <p className="how">
             {liveHere
               ? 'The agent is filling this board right now — keep talking to it in its chat. The prompt below is only for starting a separate, fresh chat on the next step.'

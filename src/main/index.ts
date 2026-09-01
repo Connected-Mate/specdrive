@@ -14,8 +14,10 @@ import {
 } from './store'
 import { detectAgents, connectAgent, verifyAgent, mcpServerPath, nodeBinPath } from './agents'
 import { exportProject } from './exporter'
-import { readImage, addImage } from './store'
-import type { AgentId } from '../shared/types'
+import { readImage, addImage, addComment } from './store'
+import { initUpdater } from './updater'
+import { checkForNotifications } from './notify'
+import type { AgentId, OwnerComment } from '../shared/types'
 
 const isDev = !app.isPackaged
 
@@ -112,6 +114,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  initUpdater()
   ensureDataDirs()
   if (process.platform === 'darwin' && !app.isPackaged && app.dock) {
     const devIcon = path.resolve(__dirname, '..', '..', 'resources', 'icon.png')
@@ -139,6 +142,11 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('document:add-image', (_e, projectId: string, name: string, b64: string) =>
     addImage(projectId, name, b64)
+  )
+  ipcMain.handle(
+    'comment:add',
+    (_e, projectId: string, target: OwnerComment['target'], text: string) =>
+      addComment(projectId, target, text)
   )
   ipcMain.handle('project:export', async (_e, id: string) => {
     const bundle = loadBundle(id)
@@ -169,10 +177,14 @@ app.whenReady().then(() => {
     if (pending) clearTimeout(pending)
     pending = setTimeout(() => {
       BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('projects:changed'))
+      checkForNotifications()
     }, 80)
   }
   watcher.on('all', notify)
   watcher.on('error', (err) => console.error('[specdrive] watcher error:', err))
+  // Seed the notifier's snapshots silently so the first real change after
+  // boot doesn't look like every task just flipped to done.
+  checkForNotifications()
   app.on('before-quit', () => {
     watcher.close().catch(() => {})
   })

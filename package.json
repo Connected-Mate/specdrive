@@ -1,7 +1,7 @@
 {
   "name": "specdrive",
   "version": "0.1.0",
-  "description": "SpecDrive \u2014 spec-driven development, made visual and effortless for everyone",
+  "description": "SpecDrive — spec-driven development, made visual and effortless for everyone",
   "main": "out/main/index.js",
   "type": "module",
   "author": "SpecDrive",
@@ -14,11 +14,13 @@
     "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
     "build:mcp": "esbuild mcp/server.mjs --bundle --platform=node --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=out/mcp/server.mjs",
     "dist": "electron-vite build && npm run build:mcp && electron-builder --mac",
+    "release": "electron-vite build && npm run build:mcp && electron-builder --mac --publish always",
     "install:app": "zsh scripts/install-app.sh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
     "chokidar": "^4.0.3",
+    "electron-updater": "^6.8.9",
     "roughjs": "^4.6.6",
     "zod": "^3.25.0"
   },

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AgentId, SpecDriveApi } from '../shared/types'
+import type { AgentId, OwnerComment, SpecDriveApi } from '../shared/types'
 
 const api: SpecDriveApi = {
   listProjects: () => ipcRenderer.invoke('projects:list'),
@@ -19,6 +19,8 @@ const api: SpecDriveApi = {
     ipcRenderer.invoke('document:read-image', projectId, file),
   addImage: (projectId: string, name: string, dataBase64: string) =>
     ipcRenderer.invoke('document:add-image', projectId, name, dataBase64),
+  addComment: (projectId: string, target: OwnerComment['target'], text: string) =>
+    ipcRenderer.invoke('comment:add', projectId, target, text),
   exportProject: (projectId: string) => ipcRenderer.invoke('project:export', projectId),
   onProjectsChanged: (cb: () => void) => {
     const listener = (): void => cb()

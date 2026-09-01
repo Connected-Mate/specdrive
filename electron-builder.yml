@@ -9,8 +9,17 @@ files:
 extraResources:
   - from: out/mcp
     to: mcp
+publish:
+  provider: github
+  owner: Alex-Connected-Mate
+  repo: specdrive
 mac:
   category: public.app-category.developer-tools
   target:
     - dmg
   icon: resources/icon.png
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true

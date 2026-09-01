@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import crypto from 'node:crypto'
-import type { ActivityEntry, ProjectBundle } from '../shared/types'
+import type { ActivityEntry, OwnerComment, ProjectBundle } from '../shared/types'
 
 export const DATA_DIR = path.join(os.homedir(), '.specdrive')
 export const PROJECTS_DIR = path.join(DATA_DIR, 'projects')
@@ -61,6 +61,7 @@ export function loadBundle(id: string): ProjectBundle | null {
     planDoc: readJson(path.join(dir, 'plan-doc.json'), null),
     documents: readJson(path.join(dir, 'documents.json'), []),
     activity: readActivity(dir),
+    comments: readJson(path.join(dir, 'comments.json'), []),
     folder: (project as { folderId?: string }).folderId
       ? readJson(path.join(DATA_DIR, 'folders', `${(project as { folderId?: string }).folderId}.json`), null)
       : null
@@ -172,6 +173,68 @@ export function addImage(projectId: string, name: string, dataBase64: string): s
     fs.appendFileSync(
       path.join(dir, 'activity.jsonl'),
       JSON.stringify({ ts: new Date().toISOString(), actor: 'app', action: 'add_image', summary: `Image added: "${clean}"` }) + '\n'
+    )
+  } catch {}
+  return ''
+}
+
+/** The owner leaves a note on a spec/task/project card; the agent reads it
+ *  through MCP on its next pass. Same lock + atomic-write protocol as
+ *  addImage — a concurrent MCP write must never tear comments.json. */
+export function addComment(projectId: string, target: OwnerComment['target'], text: string): string {
+  const pid = safeId(projectId)
+  if (!pid) return 'Unknown project.'
+  const clean = text.trim()
+  if (!clean) return 'Note is empty.'
+  if (clean.length > 4000) return 'Note is too long — 4000 characters max.'
+  const dir = path.join(PROJECTS_DIR, pid)
+  fs.mkdirSync(dir, { recursive: true })
+  const metaFile = path.join(dir, 'comments.json')
+  const lock = metaFile + '.lock'
+  const deadline = Date.now() + 3000
+  for (;;) {
+    try {
+      fs.mkdirSync(lock)
+      break
+    } catch {
+      if (Date.now() > deadline) {
+        try {
+          fs.rmdirSync(lock)
+        } catch {}
+      }
+      const wait = Date.now() + 15
+      while (Date.now() < wait) {} // ms-scale
+    }
+  }
+  try {
+    let comments: OwnerComment[] = []
+    try {
+      comments = JSON.parse(fs.readFileSync(metaFile, 'utf8'))
+    } catch {}
+    comments.push({
+      id: crypto.randomBytes(5).toString('hex'),
+      target,
+      text: clean,
+      status: 'open',
+      createdAt: new Date().toISOString()
+    })
+    const tmp = `${metaFile}.${process.pid}-${crypto.randomBytes(3).toString('hex')}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify(comments, null, 2))
+    fs.renameSync(tmp, metaFile)
+  } finally {
+    try {
+      fs.rmdirSync(lock)
+    } catch {}
+  }
+  try {
+    fs.appendFileSync(
+      path.join(dir, 'activity.jsonl'),
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        actor: 'app',
+        action: 'add_comment',
+        summary: `Note left on a ${target.kind}`
+      }) + '\n'
     )
   } catch {}
   return ''

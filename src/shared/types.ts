@@ -329,6 +329,8 @@ export interface SpecDriveApi {
   readImage(projectId: string, file: string): Promise<string>
   /** Store a dropped image into the project's documents */
   addImage(projectId: string, name: string, dataBase64: string): Promise<string>
+  /** Leave an owner note on a spec/task/project card. Returns an error string, or '' on success. */
+  addComment(projectId: string, target: OwnerComment['target'], text: string): Promise<string>
   /** Export the whole project as a standalone HTML page (save dialog) */
   exportProject(projectId: string): Promise<string | null>
   /** Subscribe to live project changes; returns unsubscribe */
