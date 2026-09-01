@@ -537,6 +537,11 @@ const server = new McpServer({ name: 'specdrive', version: '0.1.0' })
 const SESSIONS_DIR = path.join(DATA_DIR, 'sessions')
 const SESSION_FILE = path.join(SESSIONS_DIR, `${process.pid}.json`)
 let sessionStartedAt = null
+// Loop-engineering accounting for THIS session (an AI builder, never a human):
+// budget cap + circuit breaker live server-side, not in the prompt's goodwill.
+const SESSION_TASK_BUDGET = 10
+let sessionTasksDone = 0
+const sameTaskServes = new Map() // taskId -> consecutive times served to this session without completing
 let lastSession = null
 let heartbeatTimer = null
 
@@ -1340,6 +1345,10 @@ server.registerTool(
       task.status = status
       if (note !== undefined) task.note = note
       if (proof !== undefined) task.proof = proof
+      if (status === 'done') {
+        sessionTasksDone += 1
+        sameTaskServes.delete(task.id) // completed — breaker counter resets
+      }
       if (status === 'in_progress') task.claimedBy = process.pid // ownership signal for parallel sessions
       if (status === 'in_progress' && !task.startedAt) task.startedAt = now()
       if (status === 'done') {
@@ -1967,16 +1976,20 @@ server.registerTool(
           doneAt: z.string().nullable()
         })
         .nullable(),
-      readyCount: z.number().int().describe('Open tasks whose dependencies are all done'),
-      blockedCount: z.number().int().describe('Open tasks still waiting on a dependency'),
-      openCount: z.number().int(),
-      openComments: z.number().int(),
-      drift: z.object({
-        moved: z.boolean(),
-        commits: z.number().nullable(),
-        lastVerifiedRef: z.string().nullable(),
-        head: z.string().nullable()
-      })
+      readyCount: z.number().int().optional().describe('Open tasks whose dependencies are all done'),
+      blockedCount: z.number().int().optional().describe('Open tasks still waiting on a dependency'),
+      openCount: z.number().int().optional(),
+      openComments: z.number().int().optional(),
+      drift: z
+        .object({
+          moved: z.boolean(),
+          commits: z.number().nullable(),
+          lastVerifiedRef: z.string().nullable(),
+          head: z.string().nullable()
+        })
+        .optional(),
+      budgetReached: z.boolean().optional().describe('True when this session hit its task budget — stop and hand off to a fresh session'),
+      circuitBreaker: z.boolean().optional().describe('True when the same task keeps being served without completing — change approach, do not retry unchanged')
     },
     annotations: READ_ONLY
   },
@@ -2000,6 +2013,18 @@ server.registerTool(
     const foreignNote = foreign.length
       ? `\n(Heads up: another live session is already building ${foreign.map((t) => `"${t.title}"`).join(', ')} — leave those alone.)`
       : ''
+    // Loop-engineering gates, enforced at the discovery point (not by trust):
+    // budget cap — a stale session builds worse than a fresh one continues.
+    if (sessionTasksDone >= SESSION_TASK_BUDGET) {
+      return {
+        ...ok(
+          `SESSION BUDGET REACHED — this session has completed ${sessionTasksDone} tasks, which is the cap.\n` +
+            `STOP building now. Everything you finished is saved on the board with its proof — nothing is lost.\n` +
+            `Report to the owner in plain words: what got built, what proof stands out, and that a FRESH session should continue (same autobuild prompt, it resumes at the exact next step).`
+        ),
+        structuredContent: { project: id, phase: p.phase, hasTask: false, task: null, budgetReached: true }
+      }
+    }
     const drift = driftState(p, tasks)
     noteSeenRef(id, p)
     const openCount = tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length
@@ -2042,6 +2067,23 @@ server.registerTool(
           foreignNote
       return { ...ok(text), structuredContent }
     }
+    // Circuit breaker: the same task served over and over to this session
+    // without ever completing = the loop is stuck, not working.
+    const serves = (sameTaskServes.get(next.id) ?? 0) + 1
+    sameTaskServes.set(next.id, serves)
+    if (serves >= 4) {
+      return {
+        ...ok(
+          `CIRCUIT BREAKER — you have been handed "${next.title}" ${serves} times this session without finishing it. Retrying the same way again will not work.\n` +
+            `Do ONE of these now: (a) mark it blocked with a plain-words note on what is stuck (update_task), (b) re-scope it (split via add_task with parent_task_id, or drop a dead dependency with update_task depends_on), or (c) STOP and report to the owner. Do not attempt the task a ${serves + 1}th time unchanged.`
+        ),
+        structuredContent: { project: id, phase: p.phase, hasTask: true, task: shape(next), circuitBreaker: true }
+      }
+    }
+    const budgetNote =
+      sessionTasksDone >= SESSION_TASK_BUDGET - 2
+        ? `\nBudget: ${sessionTasksDone}/${SESSION_TASK_BUDGET} tasks done this session — after ${SESSION_TASK_BUDGET} the board stops handing out work; wrap up cleanly.`
+        : ''
     const linked = specs.filter((sp) => (next.specIds ?? []).includes(sp.id))
     const parent = next.parentId ? tasks.find((t) => t.id === next.parentId) : null
     return {
@@ -2058,6 +2100,7 @@ server.registerTool(
             ? ` This is an EXISTING app: re-run its own test suite after the change — nothing that worked before may break.`
             : '') +
           ` Project phase: ${p.phase}. ${ready.length} task(s) ready, ${blocked.length} waiting on dependencies.` +
+          budgetNote +
           folderRulesBlock(p) +
           ownerCommentsBlock(id) +
           foreignNote

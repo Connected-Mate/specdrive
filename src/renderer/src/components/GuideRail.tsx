@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import type { ActivityEntry, LiveSession, ProjectBundle } from '@shared/types'
 import { PHASES } from '@shared/types'
-import { ADOPT_PROMPT, DEEP_DIVE_PROMPT, PHASE_PROMPTS, START_PROMPT, fillPrompt, type McpInfo } from '@shared/prompts'
+import { ADOPT_PROMPT, AUTOBUILD_PROMPT, DEEP_DIVE_PROMPT, PHASE_PROMPTS, START_PROMPT, fillPrompt, type McpInfo } from '@shared/prompts'
 import { GlitchBadge } from './glitch/GlitchBadge'
 import { timeAgo } from '@/lib/useLive'
 import { CopyIcon, TickIcon } from './Icons'
@@ -289,6 +289,26 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
           <CopyButton text={fillPrompt(phasePrompt.prompt, project.name, undefined, mcp)} label="Copy the prompt" />
           <PromptPeek text={fillPrompt(phasePrompt.prompt, project.name, undefined, mcp)} />
         </div>
+
+        {project.phase === 'build' && (
+          <>
+            <div className="rail-divider" />
+            <div className="next-step">
+              <span className="rail-mini-label">Or let it run alone</span>
+              <h2 style={{ fontSize: 22 }}>Autonomous build</h2>
+              <p className="how">
+                Paste this and walk away: the AI builds step by step on its own, saving each
+                finished step with its proof. It stops cleanly by itself — and if your AI plan
+                hits its limit, nothing is lost: a fresh chat resumes at the exact next step.
+              </p>
+              <CopyButton
+                text={fillPrompt(AUTOBUILD_PROMPT, project.name, undefined, mcp)}
+                label="Copy the autonomous build prompt"
+              />
+              <PromptPeek text={fillPrompt(AUTOBUILD_PROMPT, project.name, undefined, mcp)} />
+            </div>
+          </>
+        )}
 
         {deepDives.length > 0 && project.phase !== 'done' && (
           <>
