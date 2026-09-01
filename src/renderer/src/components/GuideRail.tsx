@@ -49,6 +49,20 @@ function CopyButton({ text, label }: { text: string; label: string }): React.JSX
   )
 }
 
+/** The raw prompt text, collapsed behind a disclosure — closed by default so
+ *  a non-technical owner isn't confronted with a wall of instructions. */
+function PromptPeek({ text }: { text: string }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button className="disclosure" onClick={() => setOpen((o) => !o)}>
+        {open ? 'Hide what gets pasted ▾' : 'See what gets pasted ▸'}
+      </button>
+      {open && <div className="prompt-peek">{text}</div>}
+    </>
+  )
+}
+
 function useLiveSessions(): LiveSession[] {
   const [sessions, setSessions] = useState<LiveSession[]>([])
   useEffect(() => {
@@ -201,7 +215,7 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
                   : 'Your app already exists? Copy this prompt instead — the agent studies your real code and documents first, then plans your changes without breaking what works.'}
             </p>
             <CopyButton text={fillPrompt(starter, '', undefined, mcp)} label="Copy the starter prompt" />
-            <div className="prompt-peek">{fillPrompt(starter, '', undefined, mcp)}</div>
+            <PromptPeek text={fillPrompt(starter, '', undefined, mcp)} />
           </div>
         </div>
       </aside>
@@ -273,7 +287,7 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
             </p>
           )}
           <CopyButton text={fillPrompt(phasePrompt.prompt, project.name, undefined, mcp)} label="Copy the prompt" />
-          <div className="prompt-peek">{fillPrompt(phasePrompt.prompt, project.name, undefined, mcp)}</div>
+          <PromptPeek text={fillPrompt(phasePrompt.prompt, project.name, undefined, mcp)} />
         </div>
 
         {deepDives.length > 0 && project.phase !== 'done' && (

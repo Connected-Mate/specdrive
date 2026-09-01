@@ -27,7 +27,7 @@ const CATEGORY_LABEL: Record<SpecCategory, string> = {
 
 const STATUS_LABEL: Record<Spec['status'], string> = {
   draft: 'Draft',
-  challenged: 'Challenged',
+  challenged: 'Stress-tested',
   confirmed: 'Confirmed'
 }
 
@@ -243,7 +243,7 @@ function BoardTab({
     {!bundle.documents.length && (
       <p className="drop-hint">Tip — drop screenshots or reference images anywhere here to keep them with the project.</p>
     )}
-    {!(bundle.comments ?? []).length && (
+    {!(bundle.comments ?? []).some((c) => c.status === 'open') && (
       <p className="drop-hint">Click a card to leave a note — your agent reads it on its next pass.</p>
     )}
     <div className="board">
@@ -315,6 +315,23 @@ function humanizeDuration(ms: number): string {
   const h = Math.floor(totalMin / 60)
   const m = totalMin % 60
   return m ? `${h}h ${m}min` : `${h}h`
+}
+
+/** "How we checked — <proof>" under a done task — the evidence, not just the checkmark. */
+function ProofLine({ proof }: { proof: string }): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false)
+  const long = proof.length > 120
+  return (
+    <div className="proof-line">
+      <span className="proof-label">How we checked —</span>{' '}
+      <span className={`proof-text${long && !expanded ? ' clamped' : ''}`}>{proof}</span>
+      {long && (
+        <button className="proof-toggle" onClick={() => setExpanded((e) => !e)}>
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </div>
+  )
 }
 
 function TaskRow({
@@ -391,6 +408,7 @@ function TaskRow({
         </div>
         {task.status !== 'done' && <div className="detail">{task.detail}</div>}
         {task.note && <div className="note">{task.note}</div>}
+        {task.status === 'done' && task.proof && <ProofLine proof={task.proof} />}
         <div className="task-badges">
           {task.status === 'blocked' && <span className="badge">Blocked</span>}
           {!!waitsFor && (
@@ -455,9 +473,22 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
     (t.dependsOn ?? []).filter((id) => tasks.find((x) => x.id === id)?.status !== 'done').length
 
   let row = 0
+  const noOpenComments = !(bundle.comments ?? []).some((c) => c.status === 'open')
   return (
     <>
       <div className="plan-wrap">
+      {bundle.drift?.moved && (
+        <div className="plandoc-callout tone-risk drift-banner">
+          <span className="tone-badge">Heads up</span>
+          <p className="drift-text">
+            The code has changed {bundle.drift.commits} time{bundle.drift.commits === 1 ? '' : 's'} since
+            the last verified step. Ask your agent to re-check before trusting the green marks.
+          </p>
+        </div>
+      )}
+      {noOpenComments && (
+        <p className="drop-hint">Click a step to leave a note — your agent reads it on its next pass.</p>
+      )}
       <div className="progress-row">
         <div className="progress-track">
           <div className="progress-fill" style={{ width: `${(done / tasks.length) * 100}%` }} />

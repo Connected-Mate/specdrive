@@ -708,6 +708,23 @@ a {
   white-space: nowrap;
 }
 
+/* Small muted disclosure toggle — "See what gets pasted", "Advanced" — reused
+   wherever raw/technical detail should stay collapsed by default. */
+.disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--smoke);
+  transition: color 0.15s ease;
+}
+
+.disclosure:hover {
+  color: var(--ink);
+}
+
 .prompt-peek {
   margin-top: 12px;
   background: var(--ash);
@@ -1684,6 +1701,36 @@ a {
   margin-top: 4px;
 }
 
+.proof-line {
+  font-size: 11px;
+  color: var(--smoke);
+  line-height: 1.45;
+  margin-top: 4px;
+}
+
+.proof-label {
+  font-weight: 500;
+}
+
+.proof-text.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.proof-toggle {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--signal-blue);
+}
+
+.proof-toggle:hover {
+  text-decoration: underline;
+}
+
 /* ============ Flow map ============ */
 
 .flowmap-card {
@@ -2387,6 +2434,17 @@ a {
 
 .plandoc-callout.tone-note .tone-badge {
   color: var(--smoke);
+}
+
+.drift-banner {
+  margin-bottom: 16px;
+}
+
+.drift-banner .drift-text {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--graphite);
+  line-height: 1.5;
 }
 
 .plandoc-table {
@@ -3203,7 +3261,8 @@ a {
   font-size: 10.5px;
   font-weight: 500;
   color: var(--smoke);
-  padding: 3px 9px;
+  padding: 4px 10px;
+  min-height: 22px;
   border-radius: var(--radius-pill);
   background: rgba(0, 0, 0, 0.04);
   transition: background 0.15s ease, color 0.15s ease;
@@ -3214,9 +3273,21 @@ a {
   color: var(--ink);
 }
 
+/* Strengthen the affordance when its card/row is hovered, not just itself. */
+.spec-card:hover .note-toggle,
+.task-row:hover .note-toggle {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--ink);
+}
+
 .note-toggle.has-open {
   background: rgba(0, 122, 255, 0.1);
   color: var(--signal-blue);
+}
+
+.spec-card:hover .note-toggle.has-open,
+.task-row:hover .note-toggle.has-open {
+  background: rgba(0, 122, 255, 0.16);
 }
 
 /* Hand-written note feel: dashed border, faint tilt, italic ink — distinct

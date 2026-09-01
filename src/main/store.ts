@@ -3,7 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import crypto from 'node:crypto'
-import type { ActivityEntry, OwnerComment, ProjectBundle } from '../shared/types'
+import { execFileSync } from 'node:child_process'
+import type { ActivityEntry, OwnerComment, ProjectBundle, Project, Task } from '../shared/types'
 
 export const DATA_DIR = path.join(os.homedir(), '.specdrive')
 export const PROJECTS_DIR = path.join(DATA_DIR, 'projects')
@@ -47,14 +48,49 @@ function safeId(id: string): string | null {
   return SAFE_ID.test(base) ? base : null
 }
 
+/** Has the codebase moved since the last verified build step? Best-effort —
+ *  any git failure (not a repo, path gone, git missing) is swallowed to null. */
+function computeDrift(project: Project, tasks: Task[]): ProjectBundle['drift'] {
+  if (!project.codebasePath) return null
+  try {
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: project.codebasePath,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    }).trim()
+    const lastRef = tasks
+      .filter((t) => t.status === 'done' && t.gitRef)
+      .sort((a, b) => ((a.doneAt ?? '') < (b.doneAt ?? '') ? 1 : -1))[0]?.gitRef
+    if (!lastRef || lastRef === head) return { moved: false, commits: 0 }
+    let commits = 0
+    try {
+      commits =
+        parseInt(
+          execFileSync('git', ['rev-list', '--count', `${lastRef}..${head}`], {
+            cwd: project.codebasePath,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore']
+          }).trim(),
+          10
+        ) || 0
+    } catch {
+      commits = 0
+    }
+    return { moved: true, commits }
+  } catch {
+    return null
+  }
+}
+
 export function loadBundle(id: string): ProjectBundle | null {
   const dir = path.join(PROJECTS_DIR, id)
   const project = readJson(path.join(dir, 'project.json'), null)
   if (!project) return null
+  const tasks = readJson<Task[]>(path.join(dir, 'tasks.json'), [])
   return {
     project,
     specs: readJson(path.join(dir, 'specs.json'), []),
-    tasks: readJson(path.join(dir, 'tasks.json'), []),
+    tasks,
     wireframes: readJson(path.join(dir, 'wireframes.json'), []),
     flow: readJson(path.join(dir, 'flow.json'), null),
     scenarios: readJson(path.join(dir, 'scenarios.json'), []),
@@ -64,7 +100,8 @@ export function loadBundle(id: string): ProjectBundle | null {
     comments: readJson(path.join(dir, 'comments.json'), []),
     folder: (project as { folderId?: string }).folderId
       ? readJson(path.join(DATA_DIR, 'folders', `${(project as { folderId?: string }).folderId}.json`), null)
-      : null
+      : null,
+    drift: computeDrift(project as Project, tasks)
   } as ProjectBundle
 }
 
@@ -116,6 +153,61 @@ export function readImage(projectId: string, file: string): string {
   }
 }
 
+/** Same pid-stamped lock protocol as the MCP server: steal only a DEAD
+ *  process's lock (a live holder just gets more time), and the ownership stamp
+ *  inside the lock dir makes a non-owner's rmdir fail harmlessly. */
+function withFileLock<T>(metaFile: string, fn: () => T): T {
+  const lock = metaFile + '.lock'
+  const mine = path.join(lock, `owner-${process.pid}`)
+  let deadline = Date.now() + 3000
+  for (;;) {
+    try {
+      fs.mkdirSync(lock)
+      fs.writeFileSync(mine, '')
+      break
+    } catch {
+      if (Date.now() > deadline) {
+        try {
+          const owner = fs.readdirSync(lock).find((f) => f.startsWith('owner-'))
+          const ownerPid = owner ? Number(owner.slice('owner-'.length)) : null
+          let alive = false
+          if (ownerPid) {
+            try {
+              process.kill(ownerPid, 0)
+              alive = true
+            } catch {
+              // dead
+            }
+          }
+          if (!alive) {
+            if (owner) fs.unlinkSync(path.join(lock, owner))
+            fs.rmdirSync(lock)
+          } else {
+            deadline = Date.now() + 3000
+          }
+        } catch {
+          // lock vanished between checks — loop retries
+        }
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15) // real sleep, no CPU spin
+    }
+  }
+  try {
+    return fn()
+  } finally {
+    try {
+      fs.unlinkSync(mine)
+    } catch {
+      // already stolen
+    }
+    try {
+      fs.rmdirSync(lock)
+    } catch {
+      // someone else's stamp inside — their lock survives
+    }
+  }
+}
+
 export function addImage(projectId: string, name: string, dataBase64: string): string {
   const pid = safeId(projectId)
   if (!pid) return 'Unknown project.'
@@ -132,23 +224,7 @@ export function addImage(projectId: string, name: string, dataBase64: string): s
   const metaFile = path.join(dir, 'documents.json')
   // Same lock + atomic-write protocol as the MCP server — a concurrent
   // add_document must never tear this file.
-  const lock = metaFile + '.lock'
-  const deadline = Date.now() + 3000
-  for (;;) {
-    try {
-      fs.mkdirSync(lock)
-      break
-    } catch {
-      if (Date.now() > deadline) {
-        try {
-          fs.rmdirSync(lock)
-        } catch {}
-      }
-      const wait = Date.now() + 15
-      while (Date.now() < wait) {} // ms-scale
-    }
-  }
-  try {
+  withFileLock(metaFile, () => {
     let docs: unknown[] = []
     try {
       docs = JSON.parse(fs.readFileSync(metaFile, 'utf8'))
@@ -164,11 +240,7 @@ export function addImage(projectId: string, name: string, dataBase64: string): s
     const tmp = `${metaFile}.${process.pid}-${crypto.randomBytes(3).toString('hex')}.tmp`
     fs.writeFileSync(tmp, JSON.stringify(docs, null, 2))
     fs.renameSync(tmp, metaFile)
-  } finally {
-    try {
-      fs.rmdirSync(lock)
-    } catch {}
-  }
+  })
   try {
     fs.appendFileSync(
       path.join(dir, 'activity.jsonl'),
@@ -190,23 +262,7 @@ export function addComment(projectId: string, target: OwnerComment['target'], te
   const dir = path.join(PROJECTS_DIR, pid)
   fs.mkdirSync(dir, { recursive: true })
   const metaFile = path.join(dir, 'comments.json')
-  const lock = metaFile + '.lock'
-  const deadline = Date.now() + 3000
-  for (;;) {
-    try {
-      fs.mkdirSync(lock)
-      break
-    } catch {
-      if (Date.now() > deadline) {
-        try {
-          fs.rmdirSync(lock)
-        } catch {}
-      }
-      const wait = Date.now() + 15
-      while (Date.now() < wait) {} // ms-scale
-    }
-  }
-  try {
+  withFileLock(metaFile, () => {
     let comments: OwnerComment[] = []
     try {
       comments = JSON.parse(fs.readFileSync(metaFile, 'utf8'))
@@ -221,11 +277,7 @@ export function addComment(projectId: string, target: OwnerComment['target'], te
     const tmp = `${metaFile}.${process.pid}-${crypto.randomBytes(3).toString('hex')}.tmp`
     fs.writeFileSync(tmp, JSON.stringify(comments, null, 2))
     fs.renameSync(tmp, metaFile)
-  } finally {
-    try {
-      fs.rmdirSync(lock)
-    } catch {}
-  }
+  })
   try {
     fs.appendFileSync(
       path.join(dir, 'activity.jsonl'),

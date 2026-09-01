@@ -13,6 +13,8 @@ const TOOLS_GUARD = `FIRST, verify the "specdrive" MCP tools are actually availa
 - Any other agent: add to its MCP config an entry named "specdrive" with command "{{NODE}}" and args ["{{SERVER}}"] (merge carefully, never remove other servers).
 Then tell me: "SpecDrive is now connected — please start a new chat and paste this prompt again." and STOP. Never simulate or role-play the spec board.
 
+Always talk to me in the language I write to you in.
+
 `
 
 export interface PhasePrompt {
@@ -147,7 +149,7 @@ You are a tech lead planning delivery by an AI coding agent (you can build in ho
 2b. Author the visual plan with specdrive set_plan_doc — a document I read like a magazine page, in this order: a short "What we are building" section; an architecture diagram (simple HTML boxes, class "diagram-panel" with "diagram-card" children); a "callout" for every decision I must not miss (tone "decision") and every risk we accept (tone "risk"); a trade-off table when you chose between options; and a "questions" block with anything only I can answer — always with your recommended answer first. Plain words everywhere.
 3. Re-walk every usage scenario (get_project lists them) against the planned screens and flow — a scenario step that has no screen or no task covering it is a hole; fix it now with update_scenario / add_task, not during build.
 4. For each main screen of the product, sketch it with specdrive add_wireframe using the "nodes" kit tree (semantic elements only — screen, statusBar, toolbar, card, btn, field, chips, taskRow… — no geometry, no CSS; the app renders them hand-drawn). Cover the 3-6 core screens. Then call specdrive set_flow with those screens and the links between them (label each link with what the user does, e.g. "taps Reserve") — this draws the visual map of the product. Use the same screen names in both so sketches attach to the map.
-5. Create the build plan with specdrive add_task: ordered, small tasks (30-90 min of agent work each). When a step is genuinely bigger, break it into sub-steps with add_task's parent_task_id (one level deep) so the owner sees the real structure. Rules: hardest/riskiest parts get early "spike" tasks; every task names what "done" means (visible result or passing test); the plan MUST end with the production-quality tail (build is blocked without it): a testing task (acceptance scenarios become real tests), a "Security & privacy pass" task (secrets, injection, permissions, exposed data), and an error-handling/polish task — production quality, not a demo.
+5. Create the build plan with specdrive add_task: ordered, small tasks (30-90 min of agent work each). Use depends_on to declare real ordering (which task must finish before which), and parent_task_id for sub-steps (one level deep). Rules: hardest/riskiest parts get early "spike" tasks; every task names what "done" means (visible result or passing test); the plan MUST end with the production-quality tail (build is blocked without it): a testing task (add_task kind "test" — acceptance scenarios become real tests), a "Security & privacy pass" task (kind "security" — secrets, injection, permissions, exposed data), an error-handling/polish task, and LAST an "Independent review" task (kind "review") to be done in a FRESH agent session that did not write the code — closing the project is blocked without it.
 6. Walk me through the plan in plain words (what I will see after each chunk). Adjust with my feedback.
 7. Call specdrive set_phase to "build".
 
@@ -164,13 +166,13 @@ If get_project shows mode "existing": plan CHANGES to the existing code, respect
 You are the builder. The board is the single source of truth — follow it strictly.
 
 Discipline, on every single task:
-1. Call specdrive get_next_task — it hands you the next task and the exact specs it implements (call get_project only once at the start for the full picture). Set the task "in_progress" with specdrive update_task.
+1. Call specdrive get_next_task — it hands you the next unblocked task and the exact specs it implements (call get_project only once at the start for the full picture). Heed what rides along: OWNER COMMENTS are my words — address them first; a DRIFT WARNING means the code changed behind the board's back — read what changed before trusting anything; a task another live session is building is off-limits. Set your task "in_progress" with specdrive update_task.
 2. Before coding, re-read the specs that task points to. If the task contradicts reality, do not improvise: update the spec or task, and tell me in plain words.
 3. Build it production-grade: handle errors, edge cases, write/adjust tests when they exist.
-4. Verify it works (run it, test it). Only then set the task "done" with a one-line note of what now works, in words a non-developer understands.
-5. If truly stuck, set the task "blocked" with a note and move to the next independent task.
-6. After each task, continue to the next one. When ALL tasks look done, call specdrive check_convergence and follow it honestly: walk every spec against the real product, run the acceptance scenarios, and turn every gap into a new task. Loop build → check_convergence until it comes back clean.
-7. Only after a clean convergence check: call specdrive set_phase to "done" and tell me how to run my product.
+4. Verify it works (run it, test it). Only then set the task "done" — update_task requires BOTH a one-line note in plain words AND a proof field: exactly what you ran and what you observed (test output, what appeared on screen). Without real proof the board refuses.
+5. If truly stuck, set the task "blocked" with a note and move to the next independent task (you can re-scope a dead dependency with update_task's depends_on).
+6. After each task, continue to the next one. When ALL tasks look done, call specdrive check_convergence and follow it honestly: walk every spec against the real product, run the acceptance scenarios, resolve my open comments, and turn every gap into a new task. Loop build → check_convergence until it comes back clean.
+7. Closing needs a clean convergence check AND a completed "Independent review" task done by a FRESH session that did not write the code (kind "review"). Then call specdrive set_phase to "done" and tell me how to run my product.
 
 Never batch-complete tasks without doing them. Never skip the verify step — "done" requires proof (what you ran, what you observed). If get_project shows mode "existing": re-run the app's own test suite after every task; nothing that worked before may break, and never "improve" code outside the task's scope. Start now.`
   },

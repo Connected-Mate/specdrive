@@ -10,7 +10,7 @@ export function Welcome(): React.JSX.Element {
         <div className="wstep">
           <span className="num">1</span>
           <div>
-            <h3>Connect an agent</h3>
+            <h3>Connect your AI agent — it does the building</h3>
             <p>One click in the sidebar links SpecDrive to the AI tools already on your Mac.</p>
           </div>
         </div>

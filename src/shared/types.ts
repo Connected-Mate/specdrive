@@ -245,6 +245,8 @@ export interface ProjectBundle {
   folder?: Folder | null
   /** Owner comments on cards — written by the app, resolved by the agent via MCP */
   comments?: OwnerComment[]
+  /** Has the codebase moved since the last verified build step? null = unknown/not applicable */
+  drift?: { moved: boolean; commits: number } | null
 }
 
 /** Source material the owner handed over — stored complete, never summarized. */

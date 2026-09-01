@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import type { AgentVerification, DetectedAgent, Folder, ProjectBundle } from '@shared/types'
 import { useToast } from './Toast'
 import { PHASE_COLOR } from '@/lib/phaseColors'
+import { timeAgo } from '@/lib/useLive'
 
 const PHASE_SHORT: Record<string, string> = {
   capture: 'Capturing idea',
@@ -11,6 +12,42 @@ const PHASE_SHORT: Record<string, string> = {
   plan: 'Planning',
   build: 'Building',
   done: 'Built'
+}
+
+/** Config path + launch command — technical detail, collapsed behind a disclosure
+ *  so the plain-words status line and Test now button stay the focus. */
+function AdvancedMeta({
+  configPath,
+  command,
+  args
+}: {
+  configPath?: string
+  command?: string
+  args?: string[]
+}): React.JSX.Element | null {
+  const [open, setOpen] = useState(false)
+  if (!configPath && !command) return null
+  return (
+    <>
+      <button className="disclosure" onClick={() => setOpen((o) => !o)}>
+        {open ? 'Advanced ▾' : 'Advanced ▸'}
+      </button>
+      {open && (
+        <>
+          {configPath && (
+            <p className="ad-meta">
+              Config: <code>{configPath.replace(/^\/Users\/[^/]+/, '~')}</code>
+            </p>
+          )}
+          {command && (
+            <p className="ad-meta">
+              Launches: <code>{command} {(args ?? []).join(' ')}</code>
+            </p>
+          )}
+        </>
+      )}
+    </>
+  )
 }
 
 export function Sidebar({
@@ -129,6 +166,8 @@ export function Sidebar({
                   />
                   {PHASE_SHORT[b.project.phase]}
                   {b.tasks.length > 0 && ` · ${done}/${b.tasks.length}`}
+                  {' · '}
+                  {timeAgo(b.project.updatedAt)}
                 </span>
                 <button
                   className={`side-delete${confirming ? ' confirming' : ''}`}
@@ -261,16 +300,7 @@ export function Sidebar({
               ) : (
                 <p className="ad-line">Not connected yet — no “specdrive” entry in its config.</p>
               )}
-              {a.configPath && (
-                <p className="ad-meta">
-                  Config: <code>{a.configPath.replace(/^\/Users\/[^/]+/, '~')}</code>
-                </p>
-              )}
-              {a.command && (
-                <p className="ad-meta">
-                  Launches: <code>{a.command} {(a.args ?? []).join(' ')}</code>
-                </p>
-              )}
+              <AdvancedMeta configPath={a.configPath} command={a.command} args={a.args} />
               <p className="ad-meta faded">
                 SpecDrive can see whether this link truly answers — not the agent’s account or plan.
               </p>
@@ -300,8 +330,8 @@ export function Sidebar({
         {openAgent === 'other' && (
           <div className="agent-detail">
             <p className="ad-line">
-              Your board speaks MCP — an open standard. Any AI agent that supports it can connect, not
-              just the ones listed here.
+              Your board can talk to any AI tool that understands the shared standard — not just the ones
+              listed here.
             </p>
             <p className="ad-meta faded">
               Copy this and paste it into your agent’s MCP settings (an entry named “specdrive”).
