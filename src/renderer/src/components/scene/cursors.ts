@@ -235,7 +235,10 @@ export class FlyingCursors {
     this.nodes.forEach((node, i) => {
       if (header) {
         const slot = HEADER_SLOTS[i % HEADER_SLOTS.length]
-        node.cx = clamp(slot.x * w, 22, Math.max(40, w - 160))
+        // A pill can extend ~130px sideways from the cursor point (either way
+        // once flipped) and the orbit adds up to rx — keep all of it inside.
+        const edge = 150
+        node.cx = clamp(slot.x * w, Math.min(edge, w * 0.2), Math.max(edge + 20, w - edge))
         node.cy = clamp(slot.y * h, 14, Math.max(20, h - 30))
         node.rx = Math.min(w * 0.03, 26)
         node.ry = h * 0.1
@@ -253,7 +256,8 @@ export class FlyingCursors {
       // Dart target: just outside the word, on the side this cursor lives.
       const dir = node.cx >= w / 2 ? 1 : -1
       const gap = clamp(halfWord + (header ? 34 : 52), w * 0.1, w * 0.42)
-      node.spotX = clamp(w / 2 + dir * gap, 18, Math.max(30, w - 40))
+      const spotEdge = header ? Math.min(150, w * 0.2) : 18
+      node.spotX = clamp(w / 2 + dir * gap, spotEdge, Math.max(spotEdge + 12, w - spotEdge))
       node.spotY = clamp(h / 2 + (node.cy - h / 2) * 0.3, 12, Math.max(20, h - 26))
 
       // Cursors left of the name hang their pills leftwards, so nothing ever

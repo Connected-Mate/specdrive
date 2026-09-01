@@ -27,6 +27,11 @@ const api: SpecDriveApi = {
     ipcRenderer.on('projects:changed', listener)
     return () => ipcRenderer.removeListener('projects:changed', listener)
   },
+  onFullScreenChanged: (cb: (on: boolean) => void) => {
+    const listener = (_: unknown, on: boolean): void => cb(on)
+    ipcRenderer.on('window:fullscreen', listener)
+    return () => ipcRenderer.removeListener('window:fullscreen', listener)
+  },
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url)
 }
 

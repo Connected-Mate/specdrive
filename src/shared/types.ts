@@ -337,5 +337,7 @@ export interface SpecDriveApi {
   exportProject(projectId: string): Promise<string | null>
   /** Subscribe to live project changes; returns unsubscribe */
   onProjectsChanged(cb: () => void): () => void
+  /** Fullscreen toggles hide/show the traffic lights; returns unsubscribe */
+  onFullScreenChanged(cb: (on: boolean) => void): () => void
   openExternal(url: string): Promise<void>
 }

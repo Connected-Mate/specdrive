@@ -129,6 +129,13 @@ a {
   height: 52px;
   -webkit-app-region: drag;
   flex: none;
+  transition: height 0.25s ease;
+}
+
+/* Fullscreen hides the traffic lights — drop the space reserved for them */
+body.is-fullscreen .sidebar-drag,
+body.is-fullscreen .rail-drag {
+  height: 18px;
 }
 
 .sidebar-brand {
@@ -556,9 +563,11 @@ a {
 }
 
 .rail-drag {
-  height: 52px;
+  /* No traffic lights on the right side — a slim grab strip is enough. */
+  height: 26px;
   -webkit-app-region: drag;
   flex: none;
+  transition: height 0.25s ease;
 }
 
 .rail-body {

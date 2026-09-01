@@ -42,6 +42,13 @@ function createWindow(): void {
 
   win.on('ready-to-show', () => win?.show())
 
+  // Fullscreen hides the traffic lights — tell the renderer so it can drop
+  // the space reserved for them (the logo otherwise floats oddly low).
+  const sendFs = (on: boolean): void => win?.webContents.send('window:fullscreen', on)
+  win.on('enter-full-screen', () => sendFs(true))
+  win.on('leave-full-screen', () => sendFs(false))
+  win.webContents.on('did-finish-load', () => sendFs(win?.isFullScreen() ?? false))
+
   // Dev utility: SPECDRIVE_SHOT=/path.png [SPECDRIVE_ROUTE=projectId] captures a
   // screenshot of the app and exits — used for automated visual checks.
   const shotPath = process.env.SPECDRIVE_SHOT

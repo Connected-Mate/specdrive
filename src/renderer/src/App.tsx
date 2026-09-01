@@ -18,6 +18,13 @@ export default function App(): React.JSX.Element {
   const [openId, setOpenId] = useState<string | null>(null)
   const [eggOn, setEggOn] = useState(false)
   const [searchOn, setSearchOn] = useState(false)
+
+  // Fullscreen hides the traffic lights — collapse the space kept for them.
+  useEffect(() => {
+    return window.specdrive.onFullScreenChanged((on) => {
+      document.body.classList.toggle('is-fullscreen', on)
+    })
+  }, [])
   const [sideOpen, setSideOpen] = useState<boolean>(() => {
     if (window.innerWidth < NARROW) return false
     return localStorage.getItem(SIDE_KEY) !== 'closed'
