@@ -711,7 +711,7 @@ server.registerTool(
         Object.entries(PHASE_GUIDE)
           .map(([p, g]) => `• ${p}: ${g}`)
           .join('\n') +
-        `\n\nFolders (above projects): a folder carries standing HOUSE RULES (company charter, compliance, mandated stack) that apply to every project inside. When the owner says "projects for X must always follow these rules", create_folder + set_folder_rules once, then place projects in it. The rules follow the agent into every phase automatically.` +
+        `\n\nFolders (above projects): a folder carries standing HOUSE RULES (company charter, compliance, mandated stack) that apply to every project inside. When the owner says "projects for X must always follow these rules", create_folder + set_folder_rules once, then place projects in it. The rules follow the agent into every phase automatically. Presets: security, design, structure — ready-made house rules, pass them to create_folder instead of writing rules by hand.` +
         `\n\nTwo project modes:\n- mode "new": a brand-new idea, blank page.\n- mode "existing": an app that ALREADY exists (code, docs, users). Same loop, different rules: the code is ground truth, docs are hints to verify against it, and the board specs the CHANGE plus a thin tagged "as-built" baseline of only the touched areas — never the whole codebase. Every phase guide adapts automatically.\n\nGround rules:\n- The board is the single source of truth; write EVERYTHING you learn or decide into it immediately (small focused specs, one topic each).\n- Follow the owner\'s lead: if they ask you to research, compare or check something, do it right away and write the findings to the board — do not push on with your own question list.\n- The owner hands you a document, a pasted text, a style guide, ANY material → store it COMPLETE and VERBATIM with add_document BEFORE anything else, then extract specs from it. Never summarize away what the owner gave you.\n- Never ask the owner a question the web or the board can answer; ask only what only they can know, one short question at a time, your recommended answer first.\n- Talk to the owner in plain words, never jargon.\n- Never invent progress: only mark tasks done after verifying they work.` +
         current
     )
@@ -875,27 +875,59 @@ const RULES_SCHEMA = z
   .max(30)
   .describe('Keep it short and sharp — agents follow a handful of precise rules far better than a wall of text.')
 
+// Ready-made house rule packs — sharp, checkable, 5 per theme. Merged in before
+// any custom rules so the owner gets a solid baseline without writing it by hand.
+const RULE_PRESETS = {
+  security: [
+    { title: 'No secrets in code', content: 'Never hardcode API keys, tokens, passwords or credentials in code or commit them to the repo — env vars or a keychain/secret manager only.' },
+    { title: 'Validate every input server-side', content: 'Never trust client input — validate and sanitize everything server-side, even if the client already checks it.' },
+    { title: 'Least privilege for tokens and DB access', content: 'Every token, API key and database credential gets the minimum scope/permissions it needs to do its job, nothing broader.' },
+    { title: 'Pin and audit dependencies before adding', content: "New dependencies are pinned to an exact version and checked for known vulnerabilities before they're added." },
+    { title: 'Minimize and protect personal data', content: 'Collect only the personal data the product truly needs, store it encrypted, and never write it to logs or error messages.' }
+  ],
+  design: [
+    { title: "Only use the project's design tokens", content: 'Colors, type and spacing come only from the project\'s design tokens — never ad-hoc hex values, font sizes or pixel spacing invented on the spot.' },
+    { title: 'Every screen keyboard- and screen-reader-usable', content: "Every screen must be fully usable by keyboard alone and correctly announced by a screen reader, meeting WCAG AA." },
+    { title: 'One primary action per screen', content: 'Each screen has exactly one primary action, visually distinct from every secondary action.' },
+    { title: 'Design loading, empty and error states for every view', content: 'Every view that can load, be empty or fail gets its own designed state — never a blank screen or a raw error.' },
+    { title: 'Motion stays subtle and respects reduced-motion', content: "Animations are subtle and purposeful, and disable or reduce automatically when the user's system asks for reduced motion." }
+  ],
+  structure: [
+    { title: 'Small, single-purpose modules', content: 'Keep modules and files small and focused on one responsibility — no god files that do everything.' },
+    { title: 'Clear UI/logic/data layering', content: 'Keep UI, business logic and data access in separate layers — the UI never talks to storage directly.' },
+    { title: 'No circular dependencies', content: 'Modules never depend on each other in a cycle — dependencies flow one direction.' },
+    { title: 'Tests live next to the code they verify', content: "Each module's tests live alongside it (or in a clearly mirrored test path), never in one disconnected test dump." },
+    { title: 'Conventional commit messages', content: 'Commit messages follow a conventional format (type: short summary) so history stays scannable.' }
+  ]
+}
+
 server.registerTool(
   'create_folder',
   {
     title: 'Create a folder (standing house rules above projects)',
     description:
-      'A folder groups projects under standing rules that apply to EVERY project inside — company charter, compliance constraints, mandated stack, design rules. Create one when the owner says future projects for a given context must always follow specific rules. Then put projects in it (create_project folder param, or assign_project_folder).',
+      'A folder groups projects under standing rules that apply to EVERY project inside — company charter, compliance constraints, mandated stack, design rules. Create one when the owner says future projects for a given context must always follow specific rules. Then put projects in it (create_project folder param, or assign_project_folder). Use presets for ready-made house rules (security, design, structure) instead of writing them by hand.',
     inputSchema: {
       name: z.string().min(1).max(60).describe('e.g. "Acme internal tools"'),
       description: z.string().max(200).optional().describe('One plain sentence: what kind of projects live here'),
-      rules: RULES_SCHEMA.optional()
+      rules: RULES_SCHEMA.optional(),
+      presets: z
+        .array(z.enum(['security', 'design', 'structure']))
+        .optional()
+        .describe('Ready-made house rule packs (5 sharp rules each) merged in BEFORE any custom rules.')
     },
     annotations: WRITES
   },
-  async ({ name, description, rules }) => {
+  async ({ name, description, rules, presets }) => {
     fs.mkdirSync(FOLDERS_DIR, { recursive: true })
     let id = slugify(name)
     if (fs.existsSync(path.join(FOLDERS_DIR, `${id}.json`))) id = `${id}-${uid().slice(0, 4)}`
-    const folder = { id, name, description, rules: rules ?? [], createdAt: now(), updatedAt: now() }
+    const presetRules = (presets ?? []).flatMap((p) => RULE_PRESETS[p])
+    const mergedRules = [...presetRules, ...(rules ?? [])].slice(0, 30)
+    const folder = { id, name, description, rules: mergedRules, createdAt: now(), updatedAt: now() }
     writeJson(path.join(FOLDERS_DIR, `${id}.json`), folder)
     return ok(
-      `Folder "${name}" created (id: ${id}) with ${folder.rules.length} house rule(s). Every project placed in it will carry these rules through every phase. Assign projects with create_project's folder param or assign_project_folder; manage rules with set_folder_rules.`
+      `Folder "${name}" created (id: ${id}) with ${folder.rules.length} house rule(s)${presets?.length ? ` (presets: ${presets.join(', ')})` : ''}. Every project placed in it will carry these rules through every phase. Assign projects with create_project's folder param or assign_project_folder; manage rules with set_folder_rules.`
     )
   }
 )
@@ -2385,7 +2417,38 @@ Discipline, on every single task:
 8. The last task is the independent review — it is NOT yours to do: ${REVIEW_TAIL_RULE} Tell me to open a fresh session for it.
 9. Only after a clean convergence check AND that completed independent review: call specdrive set_phase to "done" and tell me how to run my product.
 
+For an unattended run, use the specdrive_autobuild prompt instead — same discipline, with stop conditions and a 10-task budget.
+
 Never batch-complete tasks without doing them. Never skip the verify step — "done" requires proof (what you ran, what you observed). If get_project shows mode "existing": re-run the app's own test suite after every task; nothing that worked before may break, and never "improve" code outside the task's scope. Start now.`
+
+const AUTOBUILD_PROMPT = `You are connected to the SpecDrive spec board via the "specdrive" MCP tools. Project: "{{PROJECT}}".
+
+You are running UNATTENDED — no owner watching this session, so you cannot ask a question and wait for an answer. The board is the single source of truth; follow it strictly.
+
+The loop, ONE task per iteration, never batch:
+1. Call specdrive get_next_task — it hands you the next unblocked task and the exact specs it implements (call get_project once at the start for the full picture). Heed everything it sends: OWNER COMMENTS are the owner's words, address them FIRST; a DRIFT WARNING means the code moved since the board was last verified — stop and read the real diff before trusting anything; a task another live session is already building is off-limits, move to the next independent one. Set your task "in_progress" with specdrive update_task.
+2. Before coding, re-read the specs that task points to, and any house rules on the board. If the task contradicts reality, do not improvise: update the spec or task, note why, and keep going.
+3. Build it production-grade: handle errors, edge cases, write/adjust tests when they exist.
+4. Verify it works for real — run it, test it, read the actual output. Only then set the task "done" — update_task requires BOTH a one-line note in plain words AND a proof field: exactly what you ran and what you observed. Never mark done on a hope.
+5. If get_next_task comes back with nothing left, call specdrive check_convergence and follow it honestly — walk specs and acceptance scenarios against the real product, turn any real gap into a new task and continue the loop. If it comes back truly clean, that is a stop condition below, not a phase change to make yourself.
+6. Repeat from step 1.
+
+STOP the run and write the end-of-run report instead of pushing through when:
+- a task turns "blocked" and no independent task is left ready to start;
+- an owner "Question:" (in OWNER COMMENTS or a decisions spec) needs an answer only the owner can give;
+- any gate or verification refuses the same task twice in a row;
+- get_next_task is empty AND a check_convergence you just ran found nothing you can honestly resolve yourself (or found nothing at all — that means the build is actually finished, still stop and report it rather than closing the project yourself);
+- you have completed 10 tasks this run — that is the budget; a fresh session continues cleaner than a stale one.
+
+Never do the independent review yourself, even if it is the only task left: ${REVIEW_TAIL_RULE} If it is the sole remaining task, STOP now and tell the owner to open a fresh session on it.
+
+End-of-run report, always, in plain words for a non-technical owner:
+- What got built this run (the plain-words note from each task you finished).
+- Proof highlights (briefly, what you actually ran and observed).
+- What stopped the run (name the exact condition above).
+- The exact next step for the owner.
+
+Never batch-complete tasks without doing them. Never skip verification — "done" requires proof. If get_project shows mode "existing": re-run the app's own test suite after every task; nothing that worked before may break, and never "improve" code outside the task's scope. Start now.`
 
 const ITERATE_PROMPT = `You are connected to the SpecDrive spec board via the "specdrive" MCP tools. Project: "{{PROJECT}}".
 
@@ -2429,6 +2492,7 @@ const PHASE_PROMPT_DEFS = [
   ['specdrive_risks', 'SpecDrive — find the hard parts', 'Pre-mortem: rate difficulty, write mitigations, give a readiness verdict.', RISKS_PROMPT],
   ['specdrive_plan', 'SpecDrive — build the plan', 'Turn the board into a visual plan document, wireframes, a screen flow and an ordered task list.', PLAN_PROMPT],
   ['specdrive_build', 'SpecDrive — build it', 'Run the build loop: one task at a time, verified, with proof, until convergence.', BUILD_PROMPT],
+  ['specdrive_autobuild', 'SpecDrive — autonomous build loop', 'Unattended build loop: one task at a time, verified, with proof, until a stop condition or a 10-task budget.', AUTOBUILD_PROMPT],
   ['specdrive_iterate', 'SpecDrive — ship & iterate', 'The first version is built: capture the next round of changes and loop back to build.', ITERATE_PROMPT]
 ]
 
