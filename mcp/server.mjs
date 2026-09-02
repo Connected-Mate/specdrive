@@ -446,7 +446,10 @@ function updateJson(file, fallback, mutate) {
   return withLock(file, () => {
     const data = readJson(file, fallback)
     const result = mutate(data)
-    if (data !== null && data !== undefined) writeJson(file, data)
+    // A mutator that reports an error rejected the call — nothing it touched
+    // may reach disk (a refused update_task was leaving depends_on behind).
+    const rejected = result && typeof result === 'object' && 'err' in result && result.err
+    if (!rejected && data !== null && data !== undefined) writeJson(file, data)
     return result
   })
 }
@@ -583,6 +586,7 @@ let sessionStartedAt = null
 // budget cap + circuit breaker live server-side, not in the prompt's goodwill.
 const SESSION_TASK_BUDGET = 10
 let sessionTasksDone = 0
+let sessionBudgetProject = null // counter is per project run, not per server lifetime
 const sameTaskServes = new Map() // taskId -> consecutive times served to this session without completing
 let lastSession = null
 let heartbeatTimer = null
@@ -672,7 +676,12 @@ server.registerTool = (name, def, handler) => {
     try {
       recomputeToolAvailability()
     } catch {}
-    return handler(args, extra)
+    try {
+      return await handler(args, extra)
+    } catch (e) {
+      console.error(`[specdrive] ${name} crashed:`, e?.stack ?? e)
+      return fail(`Something went wrong inside SpecDrive while running ${name}. Nothing was changed. Try again; if it repeats, tell the owner.`)
+    }
   })
   TOOL_HANDLES.set(name, handle)
   return handle
@@ -1126,8 +1135,6 @@ server.registerTool(
   async ({ project }) => {
     const { id } = requireProject(project)
     const bundle = loadBundle(id)
-    const staleFindings = staleTasks(bundle.tasks)
-    const failedFindings = bundle.tasks.filter((t) => t.status === 'failed')
     const comments = openComments(id)
     const guidance = guideFor(bundle.project)[bundle.project.phase]
     const structuredContent = {
@@ -1141,7 +1148,7 @@ server.registerTool(
     }
     return {
       ...ok(
-        JSON.stringify({ ...bundle, comments }, null, 2) +
+        JSON.stringify({ ...bundle, comments }) +
           `\n\nCurrent phase "${bundle.project.phase}" → ${guidance}` +
           folderRulesBlock(bundle.project) +
           ownerCommentsBlock(id)
@@ -1459,7 +1466,7 @@ server.registerTool(
         if (next_move === 'retry_changed' && lastNote && lastNote.trim() === note.trim()) {
           return { err: 'That is the same note as the last failed attempt — a retry must be a genuinely DIFFERENT approach, described differently. Change the approach, or pick split / rescope_deps / reopen_spec / ask_owner.' }
         }
-        if (next_move === 'retry_changed' && attempts.length >= 1) {
+        if (next_move === 'retry_changed' && attempts.length >= 2) {
           return {
             err: `"${task.title}" has already failed ${attempts.length} time(s). No more straight retries: split it into smaller steps (add_task with parent_task_id), rescope_deps, reopen_spec, or ask_owner. Pick one of those as next_move.`
           }
@@ -2343,6 +2350,10 @@ server.registerTool(
       : ''
     // Loop-engineering gates, enforced at the discovery point (not by trust):
     // budget cap — a stale session builds worse than a fresh one continues.
+    if (sessionBudgetProject !== id) {
+      sessionBudgetProject = id
+      sessionTasksDone = 0
+    }
     if (sessionTasksDone >= SESSION_TASK_BUDGET) {
       return {
         ...ok(
@@ -2390,7 +2401,8 @@ server.registerTool(
       return {
         ...ok(
           `REWORK BUDGET REACHED — ${rework.open} step(s) are failed or waiting on a re-check (cap ${rework.cap}). ` +
-            `Do not start new feature work: finish or re-scope those first, and if they cannot be resolved, stop and ask the owner in plain words.`
+            `Do not start new feature work: finish or re-scope those first, and if they cannot be resolved, stop and ask the owner in plain words.\n` +
+            failed.map((t) => `• FAILED "${t.title}" (id: ${t.id}) — last: ${t.attempts?.[t.attempts.length - 1]?.note ?? t.note ?? ''}`).join('\n')
         ),
         structuredContent: { project: id, phase: p.phase, hasTask: false, task: null, reworkBudgetReached: true }
       }
@@ -2555,6 +2567,8 @@ server.registerTool(
       findings.push(`SPECS STILL MARKED "gap" (${gapSpecs.length}): ${gapSpecs.map((sp) => `"${sp.title}"`).join(', ')} — verify against the real code/owner and upgrade confidence, or say why it stays unknown`)
     if (unprovenDone.length)
       findings.push(`DONE TASKS WITHOUT PROOF (${unprovenDone.length}): ${unprovenDone.map((t) => `"${t.title}"`).join(', ')} — re-verify each and record the evidence (update_task with proof)`)
+    const staleFindings = staleTasks(bundle.tasks)
+    const failedFindings = bundle.tasks.filter((t) => t.status === 'failed')
     if (staleFindings.length)
       findings.push(`STEPS NEEDING A RE-CHECK (${staleFindings.length}): ${staleFindings.map((t) => `"${t.title}"`).join(', ')} — later work changed something they relied on; re-run their checks (recheck_task) before claiming convergence`)
     if (failedFindings.length)

@@ -48,38 +48,48 @@ function safeId(id: string): string | null {
   return SAFE_ID.test(base) ? base : null
 }
 
-/** Has the codebase moved since the last verified build step? Best-effort —
- *  any git failure (not a repo, path gone, git missing) is swallowed to null. */
+/** Has the codebase moved while nobody was working on the board? Same rule as
+ *  the MCP server (baseline = last seen ref, only after a 10-min idle gap), so
+ *  the app never shows a drift badge during normal mark-done-then-commit work.
+ *  Cheap and cached per HEAD: git runs once per project per new commit, with a
+ *  timeout, never on every file-change tick. */
+const DRIFT_IDLE_MS = 10 * 60 * 1000
+const driftCache = new Map<string, { at: number; value: ProjectBundle['drift'] }>()
+
 function computeDrift(project: Project, tasks: Task[]): ProjectBundle['drift'] {
   if (!project.codebasePath) return null
+  const cached = driftCache.get(project.id)
+  if (cached && Date.now() - cached.at < 30_000) return cached.value
+  let value: ProjectBundle['drift'] = null
   try {
-    const head = execFileSync('git', ['rev-parse', 'HEAD'], {
-      cwd: project.codebasePath,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore']
-    }).trim()
-    const lastRef = tasks
+    const git = (args: string[]): string =>
+      execFileSync('git', args, {
+        cwd: project.codebasePath,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 3000
+      }).trim()
+    const head = git(['rev-parse', 'HEAD'])
+    const lastTaskRef = tasks
       .filter((t) => t.status === 'done' && t.gitRef)
       .sort((a, b) => ((a.doneAt ?? '') < (b.doneAt ?? '') ? 1 : -1))[0]?.gitRef
-    if (!lastRef || lastRef === head) return { moved: false, commits: 0 }
-    let commits = 0
-    try {
-      commits =
-        parseInt(
-          execFileSync('git', ['rev-list', '--count', `${lastRef}..${head}`], {
-            cwd: project.codebasePath,
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore']
-          }).trim(),
-          10
-        ) || 0
-    } catch {
-      commits = 0
+    const baseRef = (project as { lastSeenRef?: string }).lastSeenRef ?? lastTaskRef
+    if (!baseRef || baseRef === head) value = { moved: false, commits: 0 }
+    else {
+      const idle = Date.now() - new Date(project.updatedAt).getTime() > DRIFT_IDLE_MS
+      let commits = 0
+      try {
+        commits = parseInt(git(['rev-list', '--count', `${baseRef}..${head}`]), 10) || 0
+      } catch {
+        commits = 0
+      }
+      value = { moved: idle, commits }
     }
-    return { moved: true, commits }
   } catch {
-    return null
+    value = null
   }
+  driftCache.set(project.id, { at: Date.now(), value })
+  return value
 }
 
 export function loadBundle(id: string): ProjectBundle | null {
