@@ -57,6 +57,8 @@ export interface Spec {
   confidence?: 'confirmed' | 'inferred' | 'gap'
   /** Change log: what changed, when, and why (filled by update_spec) */
   history?: { ts: string; field: string; from: string; to: string; why?: string }[]
+  /** Set by the MCP read path instead of the full history */
+  historyCount?: number
   tags: string[]
   createdAt: string
   updatedAt: string
@@ -96,7 +98,7 @@ export interface Task {
   stale?: boolean
   /** When it was marked stale */
   staleSince?: string
-  /** Which step/change made it stale, plain words */
+  /** Id of the task (or 'discovery') whose change made it stale */
   staleBecause?: string
   /** Plain-words explanation of why it needs a re-check */
   staleReason?: string
@@ -247,6 +249,10 @@ export interface Project {
   codebasePath?: string
   /** Folder this project belongs to — its house rules apply */
   folderId?: string
+  /** Last git ref any session saw — drift baseline */
+  lastSeenRef?: string
+  /** When check_convergence last ran — gates 'done' */
+  lastConvergenceAt?: string
   phase: Phase
   /** Phase → ISO date it was completed */
   phaseHistory: Partial<Record<Phase, string>>
@@ -294,6 +300,8 @@ export interface LiveSession {
   project: string | null
   lastToolAt: string
   startedAt: string
+  /** Refreshed every 25s while the session lives */
+  heartbeatAt?: string
 }
 
 // ---------- AI coding agents installed on the machine ----------

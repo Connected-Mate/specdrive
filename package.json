@@ -1,7 +1,7 @@
 {
   "name": "specdrive",
   "version": "0.1.3",
-  "description": "SpecDrive — spec-driven development, made visual and effortless for everyone",
+  "description": "SpecDrive \u2014 spec-driven development, made visual and effortless for everyone",
   "main": "out/main/index.js",
   "type": "module",
   "author": "SpecDrive",
@@ -15,7 +15,8 @@
     "build:mcp": "esbuild mcp/server.mjs --bundle --platform=node --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=out/mcp/server.mjs",
     "dist": "electron-vite build && npm run build:mcp && electron-builder --mac",
     "release": "electron-vite build && npm run build:mcp && electron-builder --mac --publish always",
-    "install:app": "zsh scripts/install-app.sh"
+    "install:app": "zsh scripts/install-app.sh",
+    "test": "node --test test/mcp.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
