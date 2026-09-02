@@ -23,7 +23,7 @@ import {
   ITERATE_PROMPT,
   DEEP_DIVE_PROMPT
 } from '../src/shared/prompt-texts.mjs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, execFile } from 'node:child_process'
 
 const DATA_DIR = path.join(os.homedir(), '.specdrive')
 const PROJECTS_DIR = path.join(DATA_DIR, 'projects')
@@ -57,9 +57,11 @@ const PHASE_GUIDE = {
   plan:
     'PLAN: first author the visual plan document with set_plan_doc (narrative sections, decision/risk callouts, an architecture diagram, a trade-off table, open questions with recommended answers). Then sketch 3-6 core screens with add_wireframe, define the screen flow with set_flow, and create small ordered tasks with add_task (spikes for hard parts first, sub-steps via parent_task_id, real ordering via depends_on). The plan MUST end with the production-quality tail — declare each with add_task kind: a testing task (kind "test", acceptance scenarios become real tests), a "Security & privacy pass" task (kind "security" — secrets, injection, permissions, exposed data), and an error-handling/polish task — entering build is blocked without them.' +
     REVIEW_TAIL_RULE +
+    ' REVIEW LENSES: when the plan carries more than one review task, each must declare a DIFFERENT lens (add_task lens: "adversarial" = try to break it, "edge-cases" = the paths nobody walked, "verification-gap" = what the proofs do NOT actually prove, "intent-alignment" = does it serve what the owner asked for). Closing the project needs at least two distinct lenses covered.' +
+    ' EXECUTABLE PROOF: give every task you can a verify_command — the one shell command that PROVES the step (e.g. "npm test -- checkout", "npm run build", "node --check src/x.js"). The board runs it itself before accepting "done"; a step whose proof is only prose is a step nobody checked. Before entering build, run analyze_plan and clear its blocking findings.' +
     ' Then set_phase to "build".',
   build:
-    'BUILD: strict loop — take first "todo" task, set "in_progress", re-read its specs, build production-grade, VERIFY it works, set "done" with a plain-words note. Blocked? mark "blocked" + note, move on. Attempt failed? update_task status "failed" with the error and a next_move — never grind the same way twice. When the task list looks finished, call check_convergence and honestly compare code vs board; gaps become new tasks. ' +
+    'BUILD: strict loop — take first "todo" task, set "in_progress", re-read its specs, build production-grade, VERIFY it works, set "done" with a plain-words note. When the task carries a verify_command the board RUNS it for you on "done" — it must exit 0 or the step stays open; a task with genuinely nothing to run needs proof_run_skip_reason. A step that has failed three times and cannot be resolved now can be set "deferred" (with a note) instead of blocking the whole board. Blocked? mark "blocked" + note, move on. Attempt failed? update_task status "failed" with the error and a next_move — never grind the same way twice. When the task list looks finished, call check_convergence and honestly compare code vs board; gaps become new tasks. ' +
     REVIEW_TAIL_RULE +
     ' Closing the project is blocked until that review task is done. Only a clean convergence check earns set_phase to "done". The loop is NOT a straight line: when an attempt fails, say so with update_task status "failed" (note + next_move) instead of grinding — after two failures the board refuses another plain retry and you must split it, re-scope a dependency, reopen the spec, or ask the owner. Record what each finished step touched (update_task touches) so the board can tell which earlier verified steps a later change puts in doubt; when it flags one, re-run that check and answer with recheck_task ("holds" stops there, "broken" opens a fix). If building teaches you the plan itself is wrong, call raise_discovery rather than improvising.',
   done: 'DONE: v1 is complete, converged and independently reviewed. Fold any lasting decisions into the specs (update_spec, status "confirmed") so the board stays the truth. New ideas → new specs → new tasks → set_phase back to "build" — and the new plan ends with its own independent review task, done in a fresh session.'
@@ -80,9 +82,11 @@ const PHASE_GUIDE_EXISTING = {
   plan:
     'PLAN (existing app): plan CHANGES to the existing code, respecting the as-built conventions — never a rewrite of untouched areas. First task is ALWAYS the safety net: app runs, existing tests green, before touching anything. Then set_plan_doc (include a "what stays untouched" callout), wireframes only for screens that change, set_flow if navigation changes, small ordered add_task steps (spikes first, real ordering via depends_on). The plan MUST end with the production-quality tail — declare each with add_task kind: a testing task (kind "test"), a "Security & privacy pass" task (kind "security") on everything touched, and a regression/polish task — entering build is blocked without them.' +
     REVIEW_TAIL_RULE +
+    ' REVIEW LENSES: when the plan carries more than one review task, each must declare a DIFFERENT lens (add_task lens: "adversarial", "edge-cases", "verification-gap", "intent-alignment"). Closing the project needs at least two distinct lenses covered.' +
+    ' EXECUTABLE PROOF: give every task you can a verify_command — the one shell command that PROVES the step (for an existing app, prefer its OWN test command). The board runs it itself before accepting "done". Before entering build, run analyze_plan and clear its blocking findings.' +
     ' Then set_phase "build".',
   build:
-    'BUILD (existing app): strict loop as usual, PLUS: re-run the app\'s own test suite after every task; a task is only "done" when the new behavior works AND nothing that worked before broke. Never "improve" code outside the task\'s scope. Gaps → new tasks via check_convergence. ' +
+    'BUILD (existing app): strict loop as usual, PLUS: re-run the app\'s own test suite after every task; a task is only "done" when the new behavior works AND nothing that worked before broke. When the task carries a verify_command the board RUNS it on "done" — it must exit 0; a task with genuinely nothing to run needs proof_run_skip_reason. A step that has failed three times and cannot be resolved now can be set "deferred" (with a note) instead of blocking the board. Never "improve" code outside the task\'s scope. Gaps → new tasks via check_convergence. ' +
     REVIEW_TAIL_RULE +
     ' Clean check plus that review earns set_phase "done". The loop is NOT a straight line: when an attempt fails, say so with update_task status "failed" (note + next_move) instead of grinding — after two failures the board refuses another plain retry and you must split it, re-scope a dependency, reopen the spec, or ask the owner. Record what each finished step touched (update_task touches) so the board can tell which earlier verified steps a later change puts in doubt; when it flags one, re-run that check and answer with recheck_task ("holds" stops there, "broken" opens a fix). If building teaches you the plan itself is wrong, call raise_discovery rather than improvising.',
   done: 'DONE (existing app): converged and independently reviewed. Archive the delta: fold change specs into the as-built baseline (update_spec, tag "as-built", status "confirmed") so the board stays the app\'s living truth for the NEXT change. New ideas → new specs → new tasks → set_phase back to "build".'
@@ -327,6 +331,265 @@ function reworkLoad(tasks) {
 
 function isReady(task, tasks) {
   return unmetDeps(task, tasks).length === 0
+}
+
+/** Deferred = parked on purpose, with a reason. Not open work, not done work. */
+function deferredTasks(tasks) {
+  return tasks.filter((t) => t.status === 'deferred')
+}
+
+// ---------- execution waves: what several agents could take at the same time ----------
+// wave = longest dependency depth, so every task in wave N can run in parallel
+// once wave N-1 is done. Cycle-safe (the graph is validated on write, but old
+// hand-edited files exist) and memoised.
+
+function waveDepths(tasks) {
+  const byId = new Map(tasks.map((t) => [t.id, t]))
+  const depth = new Map()
+  const walking = new Set()
+  const of = (id) => {
+    if (depth.has(id)) return depth.get(id)
+    if (walking.has(id)) return 0 // a loop: stop rather than recurse forever
+    walking.add(id)
+    const t = byId.get(id)
+    const deps = (t?.dependsOn ?? []).filter((d) => byId.has(d))
+    const d = deps.length ? Math.max(...deps.map(of)) + 1 : 0
+    walking.delete(id)
+    depth.set(id, d)
+    return d
+  }
+  for (const t of tasks) of(t.id)
+  return depth
+}
+
+/** The full ready set (deps all done), with the wave each task sits in. */
+function readyWaves(tasks) {
+  const depth = waveDepths(tasks)
+  return tasks
+    .filter((t) => t.status === 'todo' && isReady(t, tasks))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((t) => ({ id: t.id, title: t.title, wave: depth.get(t.id) ?? 0 }))
+}
+
+// ---------- review lenses: two reviewers looking the same way saw one thing ----------
+
+const REVIEW_LENSES = ['adversarial', 'edge-cases', 'verification-gap', 'intent-alignment']
+const LENS_HINT = {
+  adversarial: 'adversarial (try to break it: bad input, hostile use, wrong order)',
+  'edge-cases': 'edge-cases (empty, huge, slow, offline, concurrent — the paths nobody walked)',
+  'verification-gap': 'verification-gap (what the recorded proofs do NOT actually prove)',
+  'intent-alignment': 'intent-alignment (does the built thing serve what the owner asked for)'
+}
+
+/** { reviewCount, doneLenses, enough, missing } — two or more reviews must look
+ *  from two or more angles, otherwise the second one added nothing. */
+function reviewLensState(tasks) {
+  const isReviewish = (t) => t.kind === 'review' || REVIEW_TITLE_RE.test(t.title)
+  const reviews = tasks.filter(isReviewish)
+  const doneLenses = [...new Set(reviews.filter((t) => t.status === 'done' && t.lens).map((t) => t.lens))]
+  const enough = reviews.length < 2 || doneLenses.length >= 2
+  return {
+    reviewCount: reviews.length,
+    doneLenses,
+    enough,
+    missing: REVIEW_LENSES.filter((l) => !doneLenses.includes(l))
+  }
+}
+
+// ---------- pre-build consistency audit ----------
+// Cheap, read-only, and run BEFORE a single line is written: a plan with specs
+// nobody will build is a plan that converges on paper only.
+
+const BUILDABLE_CATEGORIES = ['features', 'design', 'tech', 'data']
+
+function contentWords(s) {
+  return new Set(
+    String(s ?? '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 4)
+  )
+}
+
+/** Findings: [{ code, blocking, message }]. Blocking = a "features" spec no task
+ *  will build — everything else is a warning the agent must answer, not a wall. */
+function analyzePlan(id) {
+  const dir = projectDir(id)
+  const specs = readJson(path.join(dir, 'specs.json'), [])
+  const tasks = readJson(path.join(dir, 'tasks.json'), [])
+  const scenarios = readJson(path.join(dir, 'scenarios.json'), [])
+  const flow = readJson(path.join(dir, 'flow.json'), null)
+  const findings = []
+
+  const covered = new Set(tasks.flatMap((t) => t.specIds ?? []))
+  const buildable = specs.filter((sp) => BUILDABLE_CATEGORIES.includes(sp.category))
+  const uncovered = buildable.filter((sp) => !covered.has(sp.id))
+  const uncoveredFeatures = uncovered.filter((sp) => sp.category === 'features')
+  if (uncoveredFeatures.length) {
+    findings.push({
+      code: 'spec_without_task',
+      blocking: true,
+      message: `${uncoveredFeatures.length} FEATURE spec(s) have no task that builds them: ${uncoveredFeatures.map((sp) => `"${sp.title}"`).join(', ')} — add a task per spec (add_task spec_ids), or say why the feature is not in v1.`
+    })
+  }
+  const uncoveredOther = uncovered.filter((sp) => sp.category !== 'features')
+  if (uncoveredOther.length) {
+    findings.push({
+      code: 'spec_without_task_soft',
+      blocking: false,
+      message: `${uncoveredOther.length} design/tech/data spec(s) have no task: ${uncoveredOther.map((sp) => `"${sp.title}"`).join(', ')} — link them to a task or explain why none is needed.`
+    })
+  }
+
+  const specIds = new Set(specs.map((sp) => sp.id))
+  const orphan = tasks.filter((t) => (t.specIds ?? []).some((sid) => !specIds.has(sid)))
+  if (orphan.length) {
+    findings.push({
+      code: 'task_cites_unknown_spec',
+      blocking: false,
+      message: `${orphan.length} task(s) cite a spec that does not exist: ${orphan.map((t) => `"${t.title}"`).join(', ')}.`
+    })
+  }
+  const specless = tasks.filter((t) => !(t.specIds ?? []).length)
+  if (specless.length) {
+    findings.push({
+      code: 'task_without_spec',
+      blocking: false,
+      message: `${specless.length} task(s) implement no spec at all: ${specless.map((t) => `"${t.title}"`).join(', ')} — link the spec they serve, or say in the task detail why the step exists without one (quality tail, safety net, chore).`
+    })
+  }
+
+  // Scenario steps: every step should land on a screen the flow knows, or on a
+  // task that plainly covers it. Word overlap, not magic — it flags, never blocks.
+  const screenNames = new Set(
+    (flow?.screens ?? []).flatMap((s) => [String(s.id).toLowerCase(), String(s.name).toLowerCase()])
+  )
+  const taskWords = tasks.map((t) => contentWords(`${t.title} ${t.detail ?? ''}`))
+  const uncoveredSteps = []
+  for (const sc of scenarios) {
+    for (const [i, step] of (sc.steps ?? []).entries()) {
+      if (step.screen && screenNames.has(String(step.screen).toLowerCase())) continue
+      const words = contentWords(step.action)
+      const hit = taskWords.some((tw) => [...words].filter((w) => tw.has(w)).length >= 2)
+      if (!hit) uncoveredSteps.push(`"${sc.title}" step ${i + 1} ("${String(step.action).slice(0, 60)}")`)
+    }
+  }
+  if (uncoveredSteps.length) {
+    findings.push({
+      code: 'scenario_step_uncovered',
+      blocking: false,
+      message: `${uncoveredSteps.length} scenario step(s) match no screen in the flow and no task: ${uncoveredSteps.slice(0, 6).join('; ')}${uncoveredSteps.length > 6 ? '…' : ''} — name the screen on the step (set_flow), or add the task that makes it happen.`
+    })
+  }
+
+  // Dead chains: work that can never start because something upstream is parked.
+  const byId = new Map(tasks.map((t) => [t.id, t]))
+  const dead = []
+  for (const t of tasks) {
+    if (t.status === 'done' || t.status === 'deferred') continue
+    const seen = new Set()
+    const stack = [...(t.dependsOn ?? [])]
+    while (stack.length) {
+      const d = stack.pop()
+      if (seen.has(d)) continue
+      seen.add(d)
+      const dep = byId.get(d)
+      if (!dep) continue
+      if (dep.status === 'blocked' || dep.status === 'deferred') {
+        dead.push(`"${t.title}" waits (through the chain) on "${dep.title}" [${dep.status}]`)
+        break
+      }
+      stack.push(...(dep.dependsOn ?? []))
+    }
+  }
+  if (dead.length) {
+    findings.push({
+      code: 'dead_dependency_chain',
+      blocking: false,
+      message: `${dead.length} task(s) sit behind a chain that cannot finish: ${dead.join('; ')} — unblock the root, or re-scope the dependency (update_task depends_on).`
+    })
+  }
+  const cycle = dependencyCycle(tasks, null)
+  if (cycle) {
+    findings.push({
+      code: 'dependency_cycle',
+      blocking: true,
+      message: `The task graph contains a loop that can never finish: ${cycle.map((cid) => `"${byId.get(cid)?.title ?? cid}"`).join(' → ')} — drop one of those links.`
+    })
+  }
+
+  return { findings, blocking: findings.filter((f) => f.blocking) }
+}
+
+// ---------- executable proof: the board runs the check itself ----------
+// Self-reported proof is a claim; an exit code is evidence. The command is the
+// agent's own, run in the project's codebase, refused anywhere outside $HOME.
+
+const PROOF_TIMEOUT_MS = 120 * 1000
+const PROOF_TAIL_CHARS = 2000
+
+function tailText(s, n = PROOF_TAIL_CHARS) {
+  const str = String(s ?? '')
+  return str.length > n ? `…(truncated)\n${str.slice(-n)}` : str
+}
+
+/** The one place that decides a command may run: a real directory, inside the
+ *  user's home AFTER symlinks are resolved. Anything else is refused. */
+function resolveRunCwd(codebasePath) {
+  if (!codebasePath) {
+    return {
+      err: 'This step carries a verify_command, but the board does not know where the code lives, so it cannot run the check. Call set_codebase_path with the absolute path of the codebase root, then mark the task done again.'
+    }
+  }
+  let home
+  try {
+    home = fs.realpathSync(os.homedir())
+  } catch {
+    home = os.homedir()
+  }
+  let real
+  try {
+    real = fs.realpathSync(codebasePath)
+  } catch {
+    return { err: `The recorded codebase path does not exist: ${codebasePath}. Fix it with set_codebase_path, then try again.` }
+  }
+  if (real !== home && !real.startsWith(home + path.sep)) {
+    return {
+      err: `Refusing to run the check: the codebase path resolves to "${real}", outside your home folder. SpecDrive only runs verification commands inside it.`
+    }
+  }
+  try {
+    if (!fs.statSync(real).isDirectory()) return { err: `The codebase path is not a folder: ${real}` }
+  } catch {
+    return { err: `The codebase path cannot be read: ${real}` }
+  }
+  return { cwd: real }
+}
+
+function runVerifyCommand(command, cwd) {
+  return new Promise((resolve) => {
+    const startedAt = Date.now()
+    execFile(
+      '/bin/sh',
+      ['-lc', command],
+      { cwd, timeout: PROOF_TIMEOUT_MS, env: process.env, maxBuffer: 8 * 1024 * 1024, encoding: 'utf8' },
+      (err, stdout, stderr) => {
+        const durationMs = Date.now() - startedAt
+        const out = `${stdout ?? ''}${stderr ?? ''}`
+        let exitCode = 0
+        let timedOut = false
+        if (err) {
+          if (err.killed || err.signal) {
+            timedOut = true
+            exitCode = -1
+          } else {
+            exitCode = typeof err.code === 'number' ? err.code : 1
+          }
+        }
+        resolve({ command, exitCode, durationMs, timedOut, outputTail: tailText(out), ranAt: now() })
+      }
+    )
+  })
 }
 
 // ---------- folders: standing house rules above projects ----------
@@ -600,11 +863,92 @@ let sessionStartedAt = null
 // Loop-engineering accounting for THIS session (an AI builder, never a human):
 // budget cap + circuit breaker live server-side, not in the prompt's goodwill.
 const SESSION_TASK_BUDGET = 10
+// Wall-clock cap: a session that has been running for an hour and a half is
+// tired in every way that matters — hand off while the board is still clean.
+const SESSION_MAX_MINUTES = 90
+const STALL_MS = 10 * 60 * 1000
 let sessionTasksDone = 0
 let sessionBudgetProject = null // counter is per project run, not per server lifetime
-const sameTaskServes = new Map() // taskId -> consecutive times served to this session without completing
+let sessionStartedMs = null
+let lastToolAtMs = null
+let lastToolGapMs = 0
+// Circuit breaker, on REAL signals: a task served again while neither the code
+// (git HEAD) nor the board (tasks.json) moved is a loop, not work. Same for the
+// same failure note coming back a third time. taskId -> { fp, sameCount, trippedAt, halfOpenAt }
+const breakerState = new Map()
+const BREAKER_TRIP = 3
+const BREAKER_HALF_OPEN_MS = 10 * 60 * 1000
 let lastSession = null
 let heartbeatTimer = null
+
+/** What "nothing changed" means: same commit, same board. */
+function serveFingerprint(project, tasks) {
+  const head = gitHead(project?.codebasePath) ?? 'no-git'
+  const board = crypto.createHash('sha1').update(JSON.stringify(tasks)).digest('hex').slice(0, 12)
+  return `${head}:${board}`
+}
+
+function attemptFingerprint(note) {
+  return crypto
+    .createHash('sha1')
+    .update(String(note ?? '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 400))
+    .digest('hex')
+    .slice(0, 12)
+}
+
+/** How many times the LAST failed attempt's note has been recorded verbatim. */
+function repeatedFailureCount(task) {
+  const attempts = task?.attempts ?? []
+  if (!attempts.length) return 0
+  const fp = attemptFingerprint(attempts[attempts.length - 1].note)
+  return attempts.filter((a) => attemptFingerprint(a.note) === fp).length
+}
+
+/** { open, reason, halfOpen } — open=true means: stop, this is a loop. */
+function breakerCheck(project, tasks, task) {
+  const st = breakerState.get(task.id) ?? { fp: null, sameCount: 0, trippedAt: null, halfOpenAt: null }
+  const fp = serveFingerprint(project, tasks)
+  if (st.fp === fp) st.sameCount += 1
+  else {
+    st.fp = fp
+    st.sameCount = 1
+    st.trippedAt = null
+  }
+  const repeats = repeatedFailureCount(task)
+  const reason =
+    st.sameCount >= BREAKER_TRIP
+      ? `you have been handed "${task.title}" ${st.sameCount} times while nothing changed — same commit, same board`
+      : repeats >= BREAKER_TRIP
+        ? `"${task.title}" has failed ${repeats} times with the same reported error`
+        : null
+  if (!reason) {
+    breakerState.set(task.id, st)
+    return { open: false, halfOpen: false }
+  }
+  // HALF_OPEN: after ten minutes, exactly one more attempt is allowed through.
+  if (st.trippedAt && Date.now() - st.trippedAt >= BREAKER_HALF_OPEN_MS && !st.halfOpenAt) {
+    st.halfOpenAt = Date.now()
+    st.sameCount = 1
+    st.trippedAt = null
+    breakerState.set(task.id, st)
+    return { open: false, halfOpen: true }
+  }
+  if (!st.trippedAt) st.trippedAt = Date.now()
+  breakerState.set(task.id, st)
+  return { open: true, halfOpen: false, reason }
+}
+
+/** One-line nudge when the session went quiet while holding a task. */
+function stallNote(tasks) {
+  if (lastToolGapMs < STALL_MS) return ''
+  const held = tasks.find((t) => t.status === 'in_progress' && t.claimedBy === process.pid)
+  if (!held) return ''
+  return `STALLED — nothing was recorded on the board for ${Math.round(lastToolGapMs / 60000)} minutes while "${held.title}" was in progress. Say where it stands (update_task done / failed / blocked) before doing anything else.\n\n`
+}
+
+function sessionMinutes() {
+  return sessionStartedMs ? (Date.now() - sessionStartedMs) / 60000 : 0
+}
 
 function writeSessionFile() {
   if (!lastSession) return
@@ -616,7 +960,10 @@ function writeSessionFile() {
 
 function recordSession(tool, projectRef) {
   try {
-    if (!sessionStartedAt) sessionStartedAt = now()
+    if (!sessionStartedAt) {
+      sessionStartedAt = now()
+      sessionStartedMs = Date.now()
+    }
     let client = { name: 'AI agent', version: '' }
     try {
       const info = server.server.getClientVersion()
@@ -684,6 +1031,9 @@ const TOOL_HANDLES = new Map()
 const _registerTool = server.registerTool.bind(server)
 server.registerTool = (name, def, handler) => {
   const handle = _registerTool(name, def, async (args, extra) => {
+    // Stall detection: how long the session went silent BEFORE this call.
+    lastToolGapMs = lastToolAtMs === null ? 0 : Date.now() - lastToolAtMs
+    lastToolAtMs = Date.now()
     recordSession(name, args && typeof args.project === 'string' ? args.project : undefined)
     // Another session may have advanced a project since we last looked: re-sync
     // this session's tool surface on every call, or a parallel agent stays
@@ -709,7 +1059,7 @@ server.registerTool = (name, def, handler) => {
 // Several projects can sit in different phases, so the surface is the UNION of
 // what any project allows — narrowing is a nudge, never a wall.
 
-const PLAN_PHASE_TOOLS = ['add_task', 'set_plan_doc', 'add_wireframe', 'set_flow']
+const PLAN_PHASE_TOOLS = ['add_task', 'set_plan_doc', 'add_wireframe', 'set_flow', 'analyze_plan']
 const BUILD_PHASE_TOOLS = ['update_task', 'get_next_task', 'check_convergence']
 
 function setToolEnabled(name, on) {
@@ -1322,6 +1672,19 @@ server.registerTool(
         .describe(
           'What kind of task this is. USE IT for the quality tail: "test" (acceptance scenarios become real tests), "security" (secrets, injection, permissions, exposed data), "review" (independent review in a fresh session). The build/done gates check this field — a task not declared cannot satisfy them by wording alone.'
         ),
+      lens: z
+        .enum(REVIEW_LENSES)
+        .optional()
+        .describe(
+          'For kind "review" only: the angle this review looks from. "adversarial" (try to break it), "edge-cases" (the paths nobody walked), "verification-gap" (what the proofs do NOT prove), "intent-alignment" (does it serve what the owner asked). Two reviews looking the same way saw one thing — closing the project needs two distinct lenses when the plan has two or more reviews.'
+        ),
+      verify_command: z
+        .string()
+        .max(300)
+        .optional()
+        .describe(
+          'The command that PROVES this step, e.g. "npm test -- checkout" or "npm run build". The board runs it itself (in the codebase, 120s cap) before it accepts this task as done — it must exit 0. Give one wherever a check can be run; prose proof alone means nobody checked.'
+        ),
       depends_on: z
         .array(z.string())
         .max(20)
@@ -1332,7 +1695,7 @@ server.registerTool(
     },
     annotations: WRITES
   },
-  async ({ project, title, detail, spec_ids, order, parent_task_id, kind, depends_on }) => {
+  async ({ project, title, detail, spec_ids, order, parent_task_id, kind, lens, verify_command, depends_on }) => {
     const { id } = requireProject(project)
     const dir = projectDir(id)
     const result = updateJson(path.join(dir, 'tasks.json'), [], (tasks) => {
@@ -1365,19 +1728,32 @@ server.registerTool(
         order: order ?? (tasks.length ? Math.max(...tasks.map((t) => t.order)) + 1 : 1),
         parentId: parent_task_id,
         kind,
+        lens,
+        verifyCommand: verify_command,
         dependsOn: deps.length ? deps : undefined,
         createdAt: now(),
         updatedAt: now()
       }
       tasks.push(task)
-      return { task, total: tasks.length }
+      const otherLenses = tasks.filter((t) => t.id !== newId && t.kind === 'review' && t.lens).map((t) => t.lens)
+      return { task, total: tasks.length, otherLenses }
     })
     if (result.err) return fail(result.err)
     touchProject(id)
     logActivity(id, 'agent', 'add_task', `Task added: "${title}"`)
+    const lensNote =
+      kind === 'review' && !lens
+        ? ` Give this review a lens (add another review task with lens, or re-add this one): ${REVIEW_LENSES.map((l) => LENS_HINT[l]).join(' · ')}.`
+        : lens && result.otherLenses?.includes(lens)
+          ? ` NOTE: another review already uses the "${lens}" lens — two reviews looking the same way see the same things. Pick a different one: ${REVIEW_LENSES.filter((l) => l !== lens).join(', ')}.`
+          : ''
     return ok(
       `Task "${title}" added (id: ${result.task.id}, position ${result.task.order}). Plan has ${result.total} tasks.` +
-        (result.task.dependsOn ? ` It waits on ${result.task.dependsOn.length} task(s) before it can start.` : '')
+        (result.task.dependsOn ? ` It waits on ${result.task.dependsOn.length} task(s) before it can start.` : '') +
+        (verify_command
+          ? ` The board will run \`${verify_command}\` itself before accepting it as done.`
+          : ' No verify_command — this step will be accepted on your written proof alone. Add one if any command can prove it.') +
+        lensNote
     )
   }
 )
@@ -1392,11 +1768,18 @@ server.registerTool(
       project: z.string(),
       task_id: z.string(),
       status: z
-        .enum(['todo', 'in_progress', 'done', 'blocked', 'failed'])
+        .enum(['todo', 'in_progress', 'done', 'blocked', 'failed', 'deferred'])
         .describe(
-          'in_progress when you start · done ONLY after verifying (note + proof) · failed when an attempt did not work (note + next_move required — this is normal, say so honestly) · blocked when something outside your control stops it.'
+          'in_progress when you start · done ONLY after verifying (note + proof; the board also RUNS the task\'s verify_command) · failed when an attempt did not work (note + next_move required — this is normal, say so honestly) · blocked when something outside your control stops it · deferred when it has failed repeatedly and is genuinely parked for now (note required) so the rest of the board can move.'
         ),
-      note: z.string().optional().describe('For done: what now works, in plain words. For failed: what you tried AND the verbatim error. For blocked: why.'),
+      note: z.string().optional().describe('For done: what now works, in plain words. For failed: what you tried AND the verbatim error. For blocked/deferred: why.'),
+      proof_run_skip_reason: z
+        .string()
+        .max(300)
+        .optional()
+        .describe(
+          'Only when this task genuinely has NO runnable check (a design decision, a manual visual pass): why no command can prove it. Recorded on the board and reported by check_convergence — it is an admission, not a shortcut.'
+        ),
       next_move: z
         .enum(['retry_changed', 'split', 'rescope_deps', 'reopen_spec', 'ask_owner'])
         .optional()
@@ -1424,9 +1807,57 @@ server.registerTool(
     },
     annotations: UPDATES
   },
-  async ({ project, task_id, status, note, proof, next_move, touches, depends_on }) => {
+  async ({ project, task_id, status, note, proof, proof_run_skip_reason, next_move, touches, depends_on }) => {
     const { id, project: p } = requireProject(project)
     const dir = projectDir(id)
+    // ---- executable proof: the board runs the task's own check before it
+    // believes "done". Deliberately OUTSIDE the file lock — a 120s command must
+    // never freeze the board for every other session.
+    let proofRun = null
+    let proofSkip = proof_run_skip_reason ? { reason: proof_run_skip_reason, at: now() } : null
+    if (status === 'done' && !proofSkip) {
+      const pre = readJson(path.join(dir, 'tasks.json'), []).find((t) => t.id === task_id)
+      // Only run once the cheap gates would pass anyway, so a malformed call
+      // never costs two minutes of test suite.
+      const gateReady = pre && pre.status === 'in_progress' && note && proof
+      if (pre?.verifyCommand && gateReady) {
+        const where = resolveRunCwd(p.codebasePath)
+        if (where.err) {
+          return fail(
+            `${where.err}\nThe check that must pass: \`${pre.verifyCommand}\`\n(If this step genuinely has no runnable check, call again with proof_run_skip_reason.)`
+          )
+        }
+        proofRun = await runVerifyCommand(pre.verifyCommand, where.cwd)
+        const secs = (proofRun.durationMs / 1000).toFixed(1)
+        logActivity(
+          id,
+          'agent',
+          'verify_command',
+          proofRun.exitCode === 0
+            ? `Ran the check for "${pre.title}": passed in ${secs}s`
+            : `Ran the check for "${pre.title}": FAILED (exit ${proofRun.exitCode}) after ${secs}s`
+        )
+        if (proofRun.exitCode !== 0) {
+          // The run is recorded even though the task stays open: the owner sees
+          // the real output, not a claim that it "didn't work".
+          updateJson(path.join(dir, 'tasks.json'), [], (tasks) => {
+            const t = tasks.find((x) => x.id === task_id)
+            if (t) {
+              t.proofRun = proofRun
+              t.updatedAt = now()
+            }
+          })
+          touchProject(id)
+          return fail(
+            `The check for "${pre.title}" did NOT pass, so the step is not done.\n` +
+              `Command: ${proofRun.command}\n` +
+              `Exit code: ${proofRun.exitCode}${proofRun.timedOut ? ` (killed — it ran past the ${PROOF_TIMEOUT_MS / 1000}s limit)` : ''} after ${secs}s\n` +
+              `Output (last ${PROOF_TAIL_CHARS} characters):\n${proofRun.outputTail || '(no output)'}\n\n` +
+              `Fix what it reports and mark the task done again. If the command itself is wrong, say so honestly — update the plan, do not paper over it.`
+          )
+        }
+      }
+    }
     // Stamp the commit the work was verified against, so a later session can
     // tell whether the code moved under the board. Best-effort: no repo, no ref.
     const headRef = status === 'done' ? gitHead(p.codebasePath) : null
@@ -1465,6 +1896,11 @@ server.registerTool(
       if (task.status === 'done' && status !== 'done' && !note) {
         return { err: `Task "${task.title}" is already done. Reopening it needs a note explaining what turned out wrong.` }
       }
+      if (status === 'deferred' && !note) {
+        return {
+          err: 'A "deferred" task needs a note: what is parked, why it cannot be resolved now, and what would unblock it. Deferring is honest; deferring silently is not.'
+        }
+      }
       if (status === 'done') {
         const openChildren = tasks.filter((t) => t.parentId === task.id && t.status !== 'done')
         if (openChildren.length) {
@@ -1502,19 +1938,19 @@ server.registerTool(
       if (note !== undefined) task.note = note
       if (proof !== undefined) task.proof = proof
       if (touches !== undefined) task.touches = touches
+      if (proofRun) task.proofRun = proofRun
+      if (proofSkip && status === 'done') task.proofRunSkipped = proofSkip
+      if (status === 'deferred') task.deferredAt = now()
+      if (status !== 'deferred') task.deferredAt = undefined
       if (status === 'failed') {
         task.attempts = task.attempts ?? []
         task.attempts.push({ ts: now(), note, nextMove: next_move })
         task.nextMove = next_move
       }
       if (status === 'in_progress' && task.nextMove) task.nextMove = undefined
-      if (status === 'done') {
-        sessionTasksDone += 1
-        sameTaskServes.delete(task.id) // completed — breaker counter resets
-      }
-      if (status !== task.status || status === 'in_progress' || status === 'failed') {
-        sameTaskServes.delete(task.id) // any real move on the task is progress, not a retry
-      }
+      if (status === 'done') sessionTasksDone += 1
+      // Any real status move is progress, not a retry — the breaker forgets it.
+      breakerState.delete(task.id)
       if (status === 'done') {
         task.stale = undefined // finishing it clears any pending re-check
         task.staleSince = undefined
@@ -1542,6 +1978,7 @@ server.registerTool(
         title: task.title,
         remaining,
         blocked,
+        deferred: deferredTasks(tasks).length,
         depsChanged: depends_on !== undefined,
         attempts: task.attempts?.length ?? 0,
         staled: staled.map((t) => ({ id: t.id, title: t.title })),
@@ -1559,10 +1996,19 @@ server.registerTool(
     const staleNote = r.staled?.length
       ? ` ${r.staled.length} earlier step(s) now need a quick re-check because of this change: ${r.staled.map((t) => `"${t.title}"`).join(', ')} — get_next_task will hand them to you first (recheck_task).`
       : ''
+    const proofNote = proofRun
+      ? ` Check passed: \`${proofRun.command}\` exited 0 in ${(proofRun.durationMs / 1000).toFixed(1)}s — that ran for real, it is not a claim.`
+      : proofSkip && status === 'done'
+        ? ' Recorded that no command can prove this step — check_convergence will report it as an unverified step.'
+        : ''
     return ok(
-      `Task "${r.title}" → ${status}. ${r.remaining} task(s) remaining` +
+      `Task "${r.title}" → ${status}.${proofNote} ${r.remaining} task(s) remaining` +
         (r.blocked ? `, ${r.blocked} of them still waiting on dependencies` : '') +
+        (r.deferred ? `, ${r.deferred} deferred` : '') +
         '.' +
+        (status === 'deferred'
+          ? ' It is parked, not forgotten: the board will refuse to close while it sits there unless the owner accepts it.'
+          : '') +
         (status === 'done' && r.next ? ` Next up: "${r.next.title}" (id: ${r.next.id}).` : '') +
         (status === 'done' && !r.remaining
           ? ' All tasks complete — run check_convergence before declaring the project done.'
@@ -2200,11 +2646,23 @@ server.registerTool(
           }
           waived.push(missing.join(' and '))
         }
+        // Consistency audit before a single line is written: a plan with specs
+        // nobody will build converges on paper only.
+        const audit = analyzePlan(id)
+        if (audit.blocking.length) {
+          if (!skipReason) {
+            return fail(
+              `Cannot enter "build": the plan does not hold together yet.\n${audit.blocking.map((f) => `  • ${f.message}`).join('\n')}\n\nRun analyze_plan to see the full picture (warnings included), fix these, then enter build — or pass skip_reason if the owner accepts building on an incomplete plan.`
+            )
+          }
+          waived.push(`${audit.blocking.length} blocking plan-audit finding(s)`)
+        }
       }
     }
     if (phase === 'done') {
       const tasks = readJson(path.join(projectDir(id), 'tasks.json'), [])
-      const open = tasks.filter((t) => t.status !== 'done')
+      const open = tasks.filter((t) => t.status !== 'done' && t.status !== 'deferred')
+      const deferred = deferredTasks(tasks)
       if (!tasks.length) {
         return fail('Cannot set phase "done": there is no build plan at all. Plan and build first.')
       }
@@ -2212,6 +2670,14 @@ server.registerTool(
         return fail(
           `Cannot set phase "done": ${open.length} task(s) are not done yet (${open.slice(0, 3).map((t) => `"${t.title}"`).join(', ')}${open.length > 3 ? '…' : ''}).`
         )
+      }
+      if (deferred.length) {
+        if (!skipReason) {
+          return fail(
+            `Cannot set phase "done": ${deferred.length} step(s) were deferred, not built (${deferred.map((t) => `"${t.title}" — ${t.note ?? 'no reason recorded'}`).join('; ')}). Finish them, or pass skip_reason saying the owner accepts shipping without them — it goes on the board in their words.`
+          )
+        }
+        waived.push(`${deferred.length} deferred step(s): ${deferred.map((t) => `"${t.title}"`).join(', ')}`)
       }
       const lastTaskUpdate = tasks.reduce((m, t) => (t.updatedAt > m ? t.updatedAt : m), '')
       if (!p.lastConvergenceAt || p.lastConvergenceAt < lastTaskUpdate) {
@@ -2263,6 +2729,17 @@ server.registerTool(
         }
         waived.push('the independent review')
       }
+      // Two reviewers looking the same way saw one thing. Once a plan carries
+      // more than one review, they must come from different angles.
+      const lensState = reviewLensState(tasks)
+      if (!lensState.enough) {
+        if (!skipReason) {
+          return fail(
+            `Cannot set phase "done": the plan has ${lensState.reviewCount} review tasks but only ${lensState.doneLenses.length} distinct review lens(es) completed (${lensState.doneLenses.join(', ') || 'none'}). Two reviews looking the same way see the same things. Missing angles: ${lensState.missing.map((l) => LENS_HINT[l]).join(' · ')}. Declare the lens on the review task (add_task kind "review", lens "…") and have a fresh session do it, or pass skip_reason.`
+          )
+        }
+        waived.push(`review lens coverage (only ${lensState.doneLenses.length} distinct lens(es) completed)`)
+      }
     }
     // Every waived protection goes on the board, visibly — the owner must be
     // able to see exactly which checks were skipped and why.
@@ -2303,6 +2780,55 @@ server.registerTool(
 )
 
 server.registerTool(
+  'analyze_plan',
+  {
+    title: 'Audit the plan before a single line is written',
+    description:
+      'Read-only consistency audit of the plan: every buildable spec has a task, every task points at a real spec, every scenario step lands on a screen or a task, and no task sits behind a chain that can never finish. Run it at the END of the plan phase — entering "build" is refused while it reports a blocking finding.',
+    inputSchema: { project: z.string() },
+    outputSchema: {
+      project: z.string(),
+      ok: z.boolean().describe('True when nothing at all was found'),
+      blockingCount: z.number().int(),
+      findingCount: z.number().int(),
+      findings: z.array(
+        z.object({ code: z.string(), blocking: z.boolean(), message: z.string() })
+      ),
+      state: z.enum(['WORKING', 'RECHECK', 'COMPLETE', 'BLOCKED', 'DECIDE'])
+    },
+    annotations: READ_ONLY
+  },
+  async ({ project }) => {
+    const { id, project: p } = requireProject(project)
+    const { findings, blocking } = analyzePlan(id)
+    const structuredContent = {
+      project: id,
+      ok: findings.length === 0,
+      blockingCount: blocking.length,
+      findingCount: findings.length,
+      findings,
+      state: blocking.length ? 'BLOCKED' : findings.length ? 'WORKING' : 'COMPLETE'
+    }
+    const warnings = findings.filter((f) => !f.blocking)
+    return {
+      ...ok(
+        `PLAN AUDIT for "${p.name}"\n\n` +
+          (blocking.length
+            ? `BLOCKING — "build" stays closed until these are fixed:\n${blocking.map((f) => `  • ${f.message}`).join('\n')}\n\n`
+            : 'BLOCKING: none — the plan covers every feature spec.\n\n') +
+          (warnings.length
+            ? `WORTH ANSWERING (not blocking, but do not ignore them):\n${warnings.map((f) => `  • ${f.message}`).join('\n')}\n\n`
+            : 'WARNINGS: none.\n\n') +
+          (findings.length
+            ? 'Fix what you can, and for anything you deliberately leave, say so in plain words to the owner before entering build.'
+            : 'The plan holds together. Enter build with set_phase.')
+      ),
+      structuredContent
+    }
+  }
+)
+
+server.registerTool(
   'get_next_task',
   {
     title: 'Get the next task to build',
@@ -2327,6 +2853,19 @@ server.registerTool(
           doneAt: z.string().nullable()
         })
         .nullable(),
+      state: z
+        .enum(['WORKING', 'RECHECK', 'COMPLETE', 'BLOCKED', 'DECIDE'])
+        .describe(
+          'Machine-readable loop state, present on EVERY answer. WORKING = build the task you were handed · RECHECK = re-verify an earlier step first · COMPLETE = stop, hand off · BLOCKED = do not retry, change something or ask · DECIDE = the owner has to settle something.'
+        ),
+      ready: z
+        .array(z.object({ id: z.string(), title: z.string(), wave: z.number().int() }))
+        .optional()
+        .describe(
+          'Every task that could start right now, with its wave (dependency depth). Same wave = safe to build in parallel by separate agents, each claiming its own task.'
+        ),
+      deferredCount: z.number().int().optional(),
+      timeBudgetReached: z.boolean().optional().describe('True when the session ran past its wall-clock cap'),
       readyCount: z.number().int().optional().describe('Open tasks whose dependencies are all done'),
       blockedCount: z.number().int().optional().describe('Open tasks still waiting on a dependency'),
       openCount: z.number().int().optional(),
@@ -2368,20 +2907,42 @@ server.registerTool(
     const foreignNote = foreign.length
       ? `\n(Heads up: another live session is already building ${foreign.map((t) => `"${t.title}"`).join(', ')} — leave those alone.)`
       : ''
+    const stall = stallNote(tasks)
+    const deferred = deferredTasks(tasks)
+    const waves = readyWaves(tasks)
     // Loop-engineering gates, enforced at the discovery point (not by trust):
     // budget cap — a stale session builds worse than a fresh one continues.
     if (sessionBudgetProject !== id) {
       sessionBudgetProject = id
       sessionTasksDone = 0
     }
+    const handOff =
+      `STOP building now. Everything you finished is saved on the board with its proof — nothing is lost.\n` +
+      `Report to the owner in plain words: what got built, what proof stands out, and that a FRESH session should continue (same autobuild prompt, it resumes at the exact next step).`
     if (sessionTasksDone >= SESSION_TASK_BUDGET) {
       return {
         ...ok(
-          `SESSION BUDGET REACHED — this session has completed ${sessionTasksDone} tasks, which is the cap.\n` +
-            `STOP building now. Everything you finished is saved on the board with its proof — nothing is lost.\n` +
-            `Report to the owner in plain words: what got built, what proof stands out, and that a FRESH session should continue (same autobuild prompt, it resumes at the exact next step).`
+          stall + `SESSION BUDGET REACHED — this session has completed ${sessionTasksDone} tasks, which is the cap.\n` + handOff
         ),
-        structuredContent: { project: id, phase: p.phase, hasTask: false, task: null, budgetReached: true }
+        structuredContent: { project: id, phase: p.phase, hasTask: false, task: null, budgetReached: true, state: 'COMPLETE', deferredCount: deferred.length }
+      }
+    }
+    if (sessionMinutes() >= SESSION_MAX_MINUTES) {
+      return {
+        ...ok(
+          stall +
+            `SESSION TIME BUDGET REACHED — this session has been running for ${Math.round(sessionMinutes())} minutes (cap ${SESSION_MAX_MINUTES}).\n` +
+            handOff
+        ),
+        structuredContent: {
+          project: id,
+          phase: p.phase,
+          hasTask: false,
+          task: null,
+          timeBudgetReached: true,
+          state: 'COMPLETE',
+          deferredCount: deferred.length
+        }
       }
     }
     // Re-checks and failed work come BEFORE new features: the loop goes back up
@@ -2398,6 +2959,7 @@ server.registerTool(
       })
       return {
         ...ok(
+          stall +
           `RE-CHECK FIRST — "${first.title}" was verified earlier, but a later step changed something it relies on.\n` +
             `Why: ${first.staleReason}\n` +
             `Re-run its check for real, then call recheck_task with "holds" (still true — nothing else gets reopened) or "broken" (+ fix_detail).\n` +
@@ -2413,18 +2975,31 @@ server.registerTool(
           task: shapeTask(first),
           needsRecheck: true,
           staleCount: stale.length,
-          failedCount: failed.length
+          failedCount: failed.length,
+          deferredCount: deferred.length,
+          state: 'RECHECK'
         }
       }
     }
     if (rework.over) {
       return {
         ...ok(
-          `REWORK BUDGET REACHED — ${rework.open} step(s) are failed or waiting on a re-check (cap ${rework.cap}). ` +
+          stall +
+            `REWORK BUDGET REACHED — ${rework.open} step(s) are failed or waiting on a re-check (cap ${rework.cap}). ` +
             `Do not start new feature work: finish or re-scope those first, and if they cannot be resolved, stop and ask the owner in plain words.\n` +
-            failed.map((t) => `• FAILED "${t.title}" (id: ${t.id}) — last: ${t.attempts?.[t.attempts.length - 1]?.note ?? t.note ?? ''}`).join('\n')
+            failed.map((t) => `• FAILED "${t.title}" (id: ${t.id}) — last: ${t.attempts?.[t.attempts.length - 1]?.note ?? t.note ?? ''}`).join('\n') +
+            `\nA step that truly cannot move now can be parked with update_task status "deferred" (+ a note) so the rest of the board keeps going.`
         ),
-        structuredContent: { project: id, phase: p.phase, hasTask: false, task: null, reworkBudgetReached: true }
+        structuredContent: {
+          project: id,
+          phase: p.phase,
+          hasTask: false,
+          task: null,
+          reworkBudgetReached: true,
+          failedCount: failed.length,
+          deferredCount: deferred.length,
+          state: 'BLOCKED'
+        }
       }
     }
     const drift = driftState(p, tasks)
@@ -2445,6 +3020,7 @@ server.registerTool(
             doneAt: t.doneAt ?? null
           }
         : null
+    const commentCount = openComments(id).length
     const structuredContent = {
       project: id,
       phase: p.phase,
@@ -2453,47 +3029,84 @@ server.registerTool(
       readyCount: ready.length,
       blockedCount: blocked.length,
       openCount,
-      openComments: openComments(id).length,
+      openComments: commentCount,
+      deferredCount: deferred.length,
+      ready: waves,
+      state: next ? (commentCount ? 'DECIDE' : 'WORKING') : blocked.length ? 'BLOCKED' : 'COMPLETE',
       drift: { moved: drift.moved, commits: drift.commits, lastVerifiedRef: drift.lastVerifiedRef, head: drift.head }
     }
     if (!next) {
+      const deferredNote = deferred.length
+        ? `\n${deferred.length} step(s) were DEFERRED, not built: ${deferred.map((t) => `"${t.title}"`).join(', ')}. The board will not close on them silently — either finish them or get the owner's word.`
+        : ''
       const text = blocked.length
-        ? driftBlock(drift) +
+        ? stall +
+          driftBlock(drift) +
           `No task can start: ${blocked.length} task(s) are waiting on unfinished dependencies — ${blocked
             .map((t) => `"${t.title}" waits on ${unmetDeps(t, tasks).map((d) => `"${d.title}" [${d.status}]`).join(', ')}`)
             .join('; ')}. Unblock one (finish or re-scope the blocker), or drop the dependency.` +
+          deferredNote +
           ownerCommentsBlock(id)
-        : driftBlock(drift) +
+        : stall +
+          driftBlock(drift) +
           'No open tasks. Run check_convergence — only a clean check earns set_phase "done".' +
+          deferredNote +
           ownerCommentsBlock(id) +
           foreignNote
       return { ...ok(text), structuredContent }
     }
-    // Circuit breaker: the same task served over and over to this session
-    // without ever completing = the loop is stuck, not working.
-    const serves = (sameTaskServes.get(next.id) ?? 0) + 1
-    sameTaskServes.set(next.id, serves)
-    if (serves >= 6) {
+    // Circuit breaker on real signals: the same task handed back while neither
+    // the code nor the board moved, or the same failure reported a third time.
+    const breaker = breakerCheck(p, tasks, next)
+    if (breaker.open) {
       return {
         ...ok(
-          `CIRCUIT BREAKER — you have been handed "${next.title}" ${serves} times this session without finishing it. Retrying the same way again will not work.\n` +
-            `Do ONE of these now: (a) mark it blocked with a plain-words note on what is stuck (update_task), (b) re-scope it (split via add_task with parent_task_id, or drop a dead dependency with update_task depends_on), or (c) STOP and report to the owner. Do not attempt the task a ${serves + 1}th time unchanged.`
+          stall +
+            `CIRCUIT BREAKER — ${breaker.reason}. Doing the same thing again will produce the same result.\n` +
+            `Do ONE of these now: (a) mark it blocked with a plain-words note on what is stuck (update_task), (b) park it with status "deferred" + a note so the rest of the board moves, (c) re-scope it (split via add_task with parent_task_id, or drop a dead dependency with update_task depends_on), or (d) STOP and report to the owner. If you genuinely have a NEW approach, the board will hand this task back in ${Math.round(BREAKER_HALF_OPEN_MS / 60000)} minutes — once.`
         ),
-        structuredContent: { project: id, phase: p.phase, hasTask: true, task: shape(next), circuitBreaker: true }
+        structuredContent: {
+          project: id,
+          phase: p.phase,
+          hasTask: true,
+          task: shape(next),
+          circuitBreaker: true,
+          deferredCount: deferred.length,
+          ready: waves,
+          state: 'BLOCKED'
+        }
       }
     }
+    const halfOpenNote = breaker.halfOpen
+      ? `\nBREAKER HALF-OPEN — this task was stuck earlier; you get ONE more attempt, and only with a genuinely different approach. If it does not move this time, block it, defer it or ask the owner.`
+      : ''
     const budgetNote =
       sessionTasksDone >= SESSION_TASK_BUDGET - 2
         ? `\nBudget: ${sessionTasksDone}/${SESSION_TASK_BUDGET} tasks done this session — after ${SESSION_TASK_BUDGET} the board stops handing out work; wrap up cleanly.`
+        : ''
+    const timeNote =
+      sessionMinutes() >= SESSION_MAX_MINUTES - 15
+        ? `\nTime: ${Math.round(sessionMinutes())} of ${SESSION_MAX_MINUTES} minutes used this session — finish this step cleanly and hand off.`
+        : ''
+    const parallelNote =
+      waves.length > 1
+        ? `\n${waves.length - 1} other step(s) are ready in parallel: ${waves
+            .filter((w) => w.id !== next.id)
+            .map((w) => `"${w.title}" (id: ${w.id}, wave ${w.wave})`)
+            .join(', ')}. Same wave = no dependency between them, so separate agent sessions can take one each — claim it with update_task "in_progress" before starting.`
         : ''
     const linked = specs.filter((sp) => (next.specIds ?? []).includes(sp.id))
     const parent = next.parentId ? tasks.find((t) => t.id === next.parentId) : null
     return {
       ...ok(
-        driftBlock(drift) +
+        stall +
+          driftBlock(drift) +
           `NEXT TASK${inProgress ? ' (already in progress)' : ''}: "${next.title}" (id: ${next.id})\n` +
           (parent ? `Sub-step of: "${parent.title}"\n` : '') +
           `What to do: ${next.detail}\n` +
+          (next.verifyCommand
+            ? `The check that must pass: \`${next.verifyCommand}\` — the board runs it itself when you mark this done, and refuses "done" unless it exits 0.\n`
+            : '') +
           (linked.length
             ? `Specs it implements:\n${linked.map((sp) => `--- ${sp.title} [${sp.category}]\n${sp.content}${sp.acceptance ? `\nHow we'll know it works: ${sp.acceptance}` : ''}`).join('\n')}`
             : 'No specs linked — re-read the board if unsure.') +
@@ -2503,6 +3116,9 @@ server.registerTool(
             : '') +
           ` Project phase: ${p.phase}. ${ready.length} task(s) ready, ${blocked.length} waiting on dependencies.` +
           budgetNote +
+          timeNote +
+          halfOpenNote +
+          parallelNote +
           folderRulesBlock(p) +
           ownerCommentsBlock(id) +
           foreignNote
@@ -2530,6 +3146,11 @@ server.registerTool(
       unwalkedScenarios: z.number().int(),
       reviewDone: z.boolean(),
       securityDone: z.boolean(),
+      state: z
+        .enum(['WORKING', 'RECHECK', 'COMPLETE', 'BLOCKED', 'DECIDE'])
+        .describe('COMPLETE when the computed board is clean · DECIDE when only the owner can settle what is left · WORKING otherwise'),
+      deferredTasks: z.number().int(),
+      reviewLenses: z.array(z.string()).describe('Distinct review lenses already completed'),
       drift: z.object({
         moved: z.boolean(),
         commits: z.number().nullable(),
@@ -2544,7 +3165,8 @@ server.registerTool(
   async ({ project }, extra) => {
     const { id } = requireProject(project)
     const bundle = loadBundle(id)
-    const open = bundle.tasks.filter((t) => t.status !== 'done')
+    const open = bundle.tasks.filter((t) => t.status !== 'done' && t.status !== 'deferred')
+    const deferred = deferredTasks(bundle.tasks)
     const unconfirmed = bundle.specs.filter((s) => s.status !== 'confirmed')
     const withAcceptance = bundle.specs.filter((s) => s.acceptance)
     const scenarios = bundle.scenarios ?? []
@@ -2587,6 +3209,33 @@ server.registerTool(
       findings.push(`SPECS STILL MARKED "gap" (${gapSpecs.length}): ${gapSpecs.map((sp) => `"${sp.title}"`).join(', ')} — verify against the real code/owner and upgrade confidence, or say why it stays unknown`)
     if (unprovenDone.length)
       findings.push(`DONE TASKS WITHOUT PROOF (${unprovenDone.length}): ${unprovenDone.map((t) => `"${t.title}"`).join(', ')} — re-verify each and record the evidence (update_task with proof)`)
+    // Prose proof is a claim; an exit code is evidence. Say plainly which steps
+    // rest on a claim only.
+    // No passing run = the step rests on a written claim, whether nothing ran or
+    // the last run came back red before the skip was recorded.
+    const unrunDone = bundle.tasks.filter(
+      (t) => t.status === 'done' && t.proofRun?.exitCode !== 0 && (t.verifyCommand || t.proofRunSkipped)
+    )
+    if (unrunDone.length)
+      findings.push(
+        `STEPS ACCEPTED WITHOUT A PASSING CHECK (${unrunDone.length}): ${unrunDone
+          .map(
+            (t) =>
+              `"${t.title}"${t.proofRun ? ` — its last run exited ${t.proofRun.exitCode}` : ''}${t.proofRunSkipped ? ` — reason given: "${t.proofRunSkipped.reason}"` : ''}`
+          )
+          .join(', ')} — nothing executed proves them. Give each a verify_command that passes, or tell the owner plainly that this part rests on a written claim.`
+      )
+    const noCheckDone = bundle.tasks.filter(
+      (t) => t.status === 'done' && !t.verifyCommand && !t.proofRun && !t.proofRunSkipped
+    )
+    if (noCheckDone.length > Math.max(2, Math.ceil(bundle.tasks.length * 0.5)))
+      findings.push(
+        `MOST STEPS HAVE NO RUNNABLE CHECK (${noCheckDone.length} of ${bundle.tasks.length}) — a plan proved only in prose is a plan nobody verified. Add verify_command to the steps that can have one before claiming convergence.`
+      )
+    if (deferred.length)
+      findings.push(
+        `DEFERRED STEPS (${deferred.length}): ${deferred.map((t) => `"${t.title}" — ${t.note ?? 'no reason recorded'}`).join('; ')} — parked, not built. Finish them, or tell the owner plainly what the product will not do, and get their word before closing.`
+      )
     const staleFindings = staleTasks(bundle.tasks)
     const failedFindings = bundle.tasks.filter((t) => t.status === 'failed')
     if (staleFindings.length)
@@ -2602,6 +3251,11 @@ server.registerTool(
     if (!reviewDone)
       findings.push(
         `NO COMPLETED INDEPENDENT REVIEW — ${REVIEW_TAIL_RULE} Nothing converges until that review exists and is done`
+      )
+    const lensState = reviewLensState(bundle.tasks)
+    if (!lensState.enough)
+      findings.push(
+        `REVIEWS ALL LOOK THE SAME WAY (${lensState.reviewCount} review task(s), ${lensState.doneLenses.length} distinct lens(es) done: ${lensState.doneLenses.join(', ') || 'none'}) — missing angles: ${lensState.missing.map((l) => LENS_HINT[l]).join(' · ')}. Declare a lens on each review task (add_task kind "review", lens "…")`
       )
 
     // Open questions are exactly the thing only the owner can settle — ask when
@@ -2647,6 +3301,14 @@ server.registerTool(
       unwalkedScenarios: draftScenarios.length,
       reviewDone,
       securityDone,
+      state:
+        findings.length === 0
+          ? 'COMPLETE'
+          : openQuestions.length || comments.length
+            ? 'DECIDE'
+            : 'WORKING',
+      deferredTasks: deferred.length,
+      reviewLenses: lensState.doneLenses,
       drift: { moved: drift.moved, commits: drift.commits, lastVerifiedRef: drift.lastVerifiedRef, head: drift.head }
     }
     return {

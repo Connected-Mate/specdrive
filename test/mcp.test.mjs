@@ -46,6 +46,19 @@ async function projectInBuild(name) {
   assert.equal(r.isError, false, r.text)
   return { pid, spid, tasks }
 }
+/** A project in plan phase with one spec, one walked scenario — nothing else. */
+async function projectInPlan(name) {
+  const p = await call('create_project', { name, one_liner: 't', idea: 't' })
+  const pid = idOf(p)
+  const spid = idOf(await call('add_spec', { project: pid, category: 'features', title: 'f', content: 'f' }))
+  const sc = await call('add_scenario', { project: pid, title: 's', actor: 'u', steps: [{ action: 'a' }, { action: 'b' }] })
+  await call('update_scenario', { project: pid, scenario_id: idOf(sc), status: 'walked' })
+  for (const phase of ['challenge', 'research', 'risks', 'plan']) {
+    const r = await call('set_phase', { project: pid, phase })
+    assert.equal(r.isError, false, `phase ${phase}: ${r.text}`)
+  }
+  return { pid, spid }
+}
 const start = (pid, id) => call('update_task', { project: pid, task_id: id, status: 'in_progress' })
 const done = (pid, id, extra = {}) =>
   call('update_task', { project: pid, task_id: id, status: 'done', note: 'works', proof: 'ran it, saw it', ...extra })
@@ -227,4 +240,164 @@ test('14. two clients writing the same board in parallel lose nothing', async ()
   const specs = JSON.parse(fs.readFileSync(path.join(dir, 'specs.json'), 'utf8'))
   assert.equal(specs.length, 30)
   assert.ok(!fs.readdirSync(dir).some((f) => f.includes('.corrupt-')), 'a corrupt file was quarantined')
+})
+
+test('15. executable proof: the board runs the check itself and refuses done when it fails', async () => {
+  const { pid, spid } = await projectInPlan('t15')
+  const code = path.join(HOME, 'code-15')
+  fs.mkdirSync(code, { recursive: true })
+  assert.equal((await call('set_codebase_path', { project: pid, codebase_path: code })).isError, false)
+  const mk = async (title, verify_command, extra = {}) =>
+    idOf(await call('add_task', { project: pid, title, detail: 'x', spec_ids: [spid], verify_command, ...extra }))
+  const good = await mk('Green step', 'echo all-good')
+  const bad = await mk('Red step', 'echo boom-from-the-suite >&2; exit 3')
+  await mk('Write tests', 'true', { kind: 'test' })
+  await mk('Safety pass', 'true', { kind: 'security' })
+  assert.equal((await call('set_phase', { project: pid, phase: 'build' })).isError, false)
+
+  await start(pid, good)
+  const okRun = await done(pid, good)
+  assert.equal(okRun.isError, false, okRun.text)
+  assert.match(okRun.text, /Check passed/)
+
+  await start(pid, bad)
+  const failRun = await done(pid, bad)
+  assert.equal(failRun.isError, true, 'a failing check was accepted as done')
+  assert.match(failRun.text, /boom-from-the-suite/, 'the real output is not reported')
+  assert.match(failRun.text, /Exit code: 3/)
+
+  const tasks = JSON.parse(fs.readFileSync(path.join(HOME, '.specdrive', 'projects', pid, 'tasks.json'), 'utf8'))
+  const g = tasks.find((t) => t.id === good)
+  const b = tasks.find((t) => t.id === bad)
+  assert.equal(g.status, 'done')
+  assert.equal(g.proofRun.exitCode, 0)
+  assert.match(g.proofRun.outputTail, /all-good/)
+  assert.equal(b.status, 'in_progress', 'the failed step was closed anyway')
+  assert.equal(b.proofRun.exitCode, 3, 'the failed run was not recorded')
+
+  // A step with genuinely nothing to run says so, and it shows in convergence.
+  const skipped = await call('update_task', {
+    project: pid,
+    task_id: bad,
+    status: 'done',
+    note: 'parked the command',
+    proof: 'read it by hand',
+    proof_run_skip_reason: 'visual check only, no command can prove it'
+  })
+  assert.equal(skipped.isError, false, skipped.text)
+  const conv = await call('check_convergence', { project: pid })
+  assert.match(conv.text, /WITHOUT A PASSING CHECK/)
+  assert.match(conv.text, /its last run exited 3/)
+})
+
+test('16. every get_next_task exit carries a machine-readable state', async () => {
+  const STATES = ['WORKING', 'RECHECK', 'COMPLETE', 'BLOCKED', 'DECIDE']
+  const { pid, tasks } = await projectInBuild('t16')
+  const seen = []
+  const grab = async () => {
+    const r = await call('get_next_task', { project: pid })
+    assert.equal(r.isError, false, r.text.slice(0, 160))
+    assert.ok(STATES.includes(r.s.state), `bad state ${r.s.state}`)
+    seen.push(r.s.state)
+    return r
+  }
+  const first = await grab() // WORKING, with the parallel ready set
+  assert.equal(first.s.state, 'WORKING')
+  assert.ok(Array.isArray(first.s.ready) && first.s.ready.length >= 2, 'ready waves missing')
+  assert.ok(first.s.ready.every((w) => typeof w.wave === 'number'))
+  for (let i = 0; i < 4; i++) await grab() // breaker trips: BLOCKED
+  assert.ok(seen.includes('BLOCKED'), 'the breaker never reported BLOCKED')
+  await start(pid, tasks.a)
+  await done(pid, tasks.a, { touches: ['shared area'] })
+  await start(pid, tasks.b)
+  await done(pid, tasks.b, { touches: ['shared area'] })
+  const recheck = await grab()
+  assert.equal(recheck.s.state, 'RECHECK')
+  await call('recheck_task', { project: pid, task_id: tasks.a, outcome: 'holds', proof: 'ok' })
+  for (const id of [tasks.test, tasks.security, tasks.review]) {
+    await start(pid, id)
+    await done(pid, id)
+  }
+  const empty = await grab()
+  assert.equal(empty.s.state, 'COMPLETE')
+  const conv = await call('check_convergence', { project: pid })
+  assert.ok(STATES.includes(conv.s.state), `convergence state ${conv.s.state}`)
+})
+
+test('17. analyze_plan blocks entering build while a feature spec has no task', async () => {
+  const { pid, spid } = await projectInPlan('t17')
+  const orphanSpec = idOf(await call('add_spec', { project: pid, category: 'features', title: 'Nobody builds me', content: 'x' }))
+  const mk = (title, extra = {}) => call('add_task', { project: pid, title, detail: 'x', spec_ids: [spid], ...extra })
+  await mk('Step A')
+  await mk('Write tests', { kind: 'test' })
+  await mk('Safety pass', { kind: 'security' })
+  const audit = await call('analyze_plan', { project: pid })
+  assert.equal(audit.isError, false, audit.text)
+  assert.equal(audit.s.blockingCount, 1)
+  assert.equal(audit.s.state, 'BLOCKED')
+  assert.match(audit.text, /Nobody builds me/)
+  const refused = await call('set_phase', { project: pid, phase: 'build' })
+  assert.equal(refused.isError, true, 'build entered on an incoherent plan')
+  assert.match(refused.text, /does not hold together/)
+  await mk('Build the missing feature', { spec_ids: [orphanSpec] })
+  assert.equal((await call('analyze_plan', { project: pid })).s.blockingCount, 0)
+  assert.equal((await call('set_phase', { project: pid, phase: 'build' })).isError, false)
+})
+
+test('18. two reviews must look from two different angles', async () => {
+  const { pid, tasks } = await projectInBuild('t18')
+  const second = idOf(await call('add_task', { project: pid, title: 'Second review', detail: 'x', kind: 'review', lens: 'adversarial' }))
+  const finish = async (id) => {
+    await start(pid, id)
+    await done(pid, id, { note: 'ok', proof: 'a fresh independent session read the diff' })
+  }
+  for (const id of [...Object.values(tasks), second]) await finish(id)
+  await call('check_convergence', { project: pid })
+  const refused = await call('set_phase', { project: pid, phase: 'done' })
+  assert.equal(refused.isError, true, 'closed with a single review angle')
+  assert.match(refused.text, /lens/i)
+  assert.match(refused.text, /edge-cases/)
+  const third = idOf(await call('add_task', { project: pid, title: 'Third review', detail: 'x', kind: 'review', lens: 'edge-cases' }))
+  await finish(third)
+  await call('check_convergence', { project: pid })
+  const r = await call('set_phase', { project: pid, phase: 'done' })
+  assert.equal(r.isError, false, r.text)
+})
+
+test('19. a step can be deferred, and the board refuses to close over it silently', async () => {
+  const { pid, tasks } = await projectInBuild('t19')
+  assert.equal(
+    (await call('update_task', { project: pid, task_id: tasks.b, status: 'deferred' })).isError,
+    true,
+    'deferred without a note'
+  )
+  const d = await call('update_task', { project: pid, task_id: tasks.b, status: 'deferred', note: 'needs an API key the owner has not issued' })
+  assert.equal(d.isError, false, d.text)
+  for (const id of [tasks.a, tasks.test, tasks.security, tasks.review]) {
+    await start(pid, id)
+    await done(pid, id, { proof: 'a fresh independent session verified it' })
+  }
+  const conv = await call('check_convergence', { project: pid })
+  assert.match(conv.text, /DEFERRED STEPS/)
+  assert.equal(conv.s.deferredTasks, 1)
+  const refused = await call('set_phase', { project: pid, phase: 'done' })
+  assert.equal(refused.isError, true, 'closed over a deferred step')
+  assert.match(refused.text, /deferred/i)
+  const r = await call('set_phase', { project: pid, phase: 'done', skip_reason: 'owner ships v1 without it' })
+  assert.equal(r.isError, false, r.text)
+  const board = JSON.parse((await call('get_project', { project: pid })).text.split('\n\nCurrent phase')[0])
+  assert.ok(board.specs.some((s) => s.title.startsWith('Checks skipped')), 'the waiver is not on the board')
+})
+
+test('20. a verify_command is refused outside the home folder', async () => {
+  const { pid, spid } = await projectInPlan('t20')
+  assert.equal((await call('set_codebase_path', { project: pid, codebase_path: '/tmp' })).isError, false)
+  const t = idOf(await call('add_task', { project: pid, title: 'Step', detail: 'x', spec_ids: [spid], verify_command: 'true' }))
+  await call('add_task', { project: pid, title: 'Write tests', detail: 'x', spec_ids: [spid], kind: 'test' })
+  await call('add_task', { project: pid, title: 'Safety pass', detail: 'x', spec_ids: [spid], kind: 'security' })
+  assert.equal((await call('set_phase', { project: pid, phase: 'build' })).isError, false)
+  await start(pid, t)
+  const r = await done(pid, t)
+  assert.equal(r.isError, true, 'ran a command outside the home folder')
+  assert.match(r.text, /outside your home folder/)
 })
