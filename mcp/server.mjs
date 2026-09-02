@@ -846,7 +846,7 @@ server.registerTool(
     inputSchema: {
       name: z.string().min(1).max(60).describe('Short product name'),
       one_liner: z.string().min(1).max(140).describe('One plain-English sentence: what it is, for whom'),
-      idea: z.string().describe("The owner's raw idea (or the change they want), in their words"),
+      idea: z.string().max(8000).describe("The owner's raw idea (or the change they want), in their words"),
       folder: z
         .string()
         .optional()
@@ -1166,10 +1166,11 @@ server.registerTool(
         .min(1)
         .max(20000)
         .describe('Markdown body. Start with 1-2 plain sentences a non-developer understands; details/links after.'),
-      tags: z.array(z.string()).optional(),
+      tags: z.array(z.string().max(40)).max(12).optional(),
       difficulty: z.number().int().min(1).max(5).optional().describe('1 easy → 5 hardest'),
       acceptance: z
         .string()
+        .max(4000)
         .optional()
         .describe(
           'How we will know it works: short Given/When/Then scenario(s), plain language. Becomes the basis for real acceptance tests during build.'
@@ -1280,6 +1281,7 @@ server.registerTool(
       title: z.string().min(1).max(100),
       detail: z
         .string()
+        .max(4000)
         .describe('What to build and what "done" means (visible result or passing test). Plain words first.'),
       spec_ids: z.array(z.string()).optional().describe('Specs this task implements'),
       order: z.number().int().optional().describe('Position in the plan; defaults to end'),
@@ -1902,7 +1904,9 @@ server.registerTool(
         `No document "${document_id}". Stored: ${docs.map((d) => `${d.id} ("${d.title}")`).join(', ') || 'none'}`
       )
     }
-    const content = fs.readFileSync(path.join(projectDir(id), 'documents', doc.file), 'utf8')
+    const safeFile = path.basename(String(doc.file))
+    if (!/^[a-z0-9]+\.md$/.test(safeFile)) return fail('That document record is malformed.')
+    const content = fs.readFileSync(path.join(projectDir(id), 'documents', safeFile), 'utf8')
     return ok(`# ${doc.title} [${doc.kind}]
 
 ${content}`)

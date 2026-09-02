@@ -39,7 +39,7 @@ ${
       bundle.planDoc.blocks
         .map((b) => {
           if (b.type === 'section') return `<h3>${esc(b.title)}</h3><p>${esc(b.body)}</p>`
-          if (b.type === 'callout') return `<div class="card"><strong>${b.tone.toUpperCase()}</strong> — ${esc(b.body)}</div>`
+          if (b.type === 'callout') return `<div class="card"><strong>${esc(b.tone.toUpperCase())}</strong> — ${esc(b.body)}</div>`
           if (b.type === 'table')
             return `<div class="card">${b.title ? `<h3>${esc(b.title)}</h3>` : ''}<table>${b.rows.map((r) => `<tr>${r.map((c) => `<td style="padding:4px 12px 4px 0;vertical-align:top">${esc(c)}</td>`).join('')}</tr>`).join('')}</table></div>`
           if (b.type === 'questions')
@@ -56,7 +56,7 @@ ${[...specsByCat.entries()]
       specs
         .map(
           (s) =>
-            `<div class="card"><h3>${esc(s.title)}</h3><p>${esc(s.content)}</p><span class="badge">${s.status}</span>${s.acceptance ? `<p class="muted">How we\u2019ll know it works: ${esc(s.acceptance)}</p>` : ''}</div>`
+            `<div class="card"><h3>${esc(s.title)}</h3><p>${esc(s.content)}</p><span class="badge">${esc(s.status)}</span>${s.acceptance ? `<p class="muted">How we\u2019ll know it works: ${esc(s.acceptance)}</p>` : ''}</div>`
         )
         .join('')
   )

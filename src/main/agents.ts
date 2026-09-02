@@ -314,6 +314,11 @@ export async function detectAgents(serverPath: string): Promise<DetectedAgent[]>
 
 export async function connectAgent(id: AgentId, serverPath: string): Promise<void> {
   const nodeBin = await nodeBinPath()
+  // Both paths end up inside a shell command and a TOML file: only accept
+  // plain path characters, never quotes, backticks or $(...).
+  for (const p of [nodeBin, serverPath]) {
+    if (!/^[A-Za-z0-9_./ +@()-]+$/.test(p)) throw new Error(`Refusing to write an unsafe path into agent config: ${p}`)
+  }
   switch (id) {
     case 'claude-code': {
       // The CLI merges into ~/.claude.json for us; user scope = available everywhere.

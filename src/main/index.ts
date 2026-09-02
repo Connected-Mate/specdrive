@@ -108,9 +108,19 @@ function createWindow(): void {
     })
   }
 
+  const safeExternal = (url: string): void => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+  }
   win.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    safeExternal(details.url)
     return { action: 'deny' }
+  })
+  // The renderer is a local file; it never navigates anywhere.
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith('file://') && !(isDev && url.startsWith('http://localhost'))) {
+      e.preventDefault()
+      safeExternal(url)
+    }
   })
 
   if (isDev && process.env.ELECTRON_RENDERER_URL) {
