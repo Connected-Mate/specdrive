@@ -1,4 +1,5 @@
 export const REVIEW_TAIL_RULE: string
+export const HOUSE_BRIEFING_TEMPLATE: string
 export const START_PROMPT: string
 export const ADOPT_PROMPT: string
 export const CHALLENGE_PROMPT: string

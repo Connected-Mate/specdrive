@@ -21,6 +21,8 @@ const api: SpecDriveApi = {
     ipcRenderer.invoke('document:add-image', projectId, name, dataBase64),
   addComment: (projectId: string, target: OwnerComment['target'], text: string) =>
     ipcRenderer.invoke('comment:add', projectId, target, text),
+  setSyncAgentsMd: (projectId: string, on: boolean) =>
+    ipcRenderer.invoke('project:set-sync-agents-md', projectId, on),
   exportProject: (projectId: string) => ipcRenderer.invoke('project:export', projectId),
   onProjectsChanged: (cb: () => void) => {
     const listener = (): void => cb()

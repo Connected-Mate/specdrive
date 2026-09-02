@@ -302,6 +302,28 @@ export function addComment(projectId: string, target: OwnerComment['target'], te
   return ''
 }
 
+/** Owner flips the "write AGENTS.md into the code folder" toggle. Same lock +
+ *  atomic-write protocol as the MCP server's own project.json writes (withLock
+ *  in mcp/server.mjs) — safe to touch from the app side alongside it. */
+export function setSyncAgentsMd(projectId: string, on: boolean): void {
+  const pid = safeId(projectId)
+  if (!pid) return
+  const metaFile = path.join(PROJECTS_DIR, pid, 'project.json')
+  withFileLock(metaFile, () => {
+    let project: Record<string, unknown>
+    try {
+      project = JSON.parse(fs.readFileSync(metaFile, 'utf8'))
+    } catch {
+      return
+    }
+    project.syncAgentsMd = on
+    project.updatedAt = new Date().toISOString()
+    const tmp = `${metaFile}.${process.pid}-${crypto.randomBytes(3).toString('hex')}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify(project, null, 2))
+    fs.renameSync(tmp, metaFile)
+  })
+}
+
 const SESSIONS_DIR = path.join(DATA_DIR, 'sessions')
 const SESSION_FRESH_MS = 75_000
 

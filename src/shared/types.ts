@@ -224,6 +224,15 @@ export interface OwnerComment {
 export interface FolderRule {
   title: string
   content: string
+  /** Who set this rule: the owner directly, or an agent proposing it on the owner's behalf */
+  setBy?: 'owner' | `agent:${string}`
+  setAt?: string
+  /** True once the owner has explicitly approved a rule an agent proposed */
+  confirmedByOwner?: boolean
+  /** Title of the earlier rule this one replaces, if any */
+  supersedes?: string
+  /** Glob this rule is scoped to, e.g. "ios/**" — omitted means it applies everywhere in the folder */
+  appliesTo?: string
 }
 
 /** A folder above projects: standing house rules (company charter, compliance…)
@@ -249,6 +258,8 @@ export interface Project {
   codebasePath?: string
   /** Folder this project belongs to — its house rules apply */
   folderId?: string
+  /** Write the generated AGENTS.md (and a CLAUDE.md stub) into codebasePath on every change. Default true. */
+  syncAgentsMd?: boolean
   /** Last git ref any session saw — drift baseline */
   lastSeenRef?: string
   /** When check_convergence last ran — gates 'done' */
@@ -365,6 +376,8 @@ export interface SpecDriveApi {
   addImage(projectId: string, name: string, dataBase64: string): Promise<string>
   /** Leave an owner note on a spec/task/project card. Returns an error string, or '' on success. */
   addComment(projectId: string, target: OwnerComment['target'], text: string): Promise<string>
+  /** Turn the generated AGENTS.md export for this project's code folder on/off. */
+  setSyncAgentsMd(projectId: string, on: boolean): Promise<void>
   /** Export the whole project as a standalone HTML page (save dialog) */
   exportProject(projectId: string): Promise<string | null>
   /** Subscribe to live project changes; returns unsubscribe */

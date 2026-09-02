@@ -14,7 +14,8 @@ import {
 } from './store'
 import { detectAgents, connectAgent, verifyAgent, mcpServerPath, nodeBinPath } from './agents'
 import { exportProject } from './exporter'
-import { readImage, addImage, addComment } from './store'
+import { readImage, addImage, addComment, setSyncAgentsMd } from './store'
+import { syncAllAgentsMd } from './agentsMd'
 import { initUpdater, checkForUpdatesInteractive } from './updater'
 import { checkForNotifications } from './notify'
 import type { AgentId, OwnerComment } from '../shared/types'
@@ -195,6 +196,10 @@ app.whenReady().then(() => {
     (_e, projectId: string, target: OwnerComment['target'], text: string) =>
       addComment(projectId, target, text)
   )
+  ipcMain.handle('project:set-sync-agents-md', (_e, projectId: string, on: boolean) => {
+    setSyncAgentsMd(projectId, on)
+    scheduleAgentsMdSync()
+  })
   ipcMain.handle('project:export', async (_e, id: string) => {
     const bundle = loadBundle(id)
     if (!bundle) return null
@@ -227,11 +232,23 @@ app.whenReady().then(() => {
       checkForNotifications()
     }, 80)
   }
-  watcher.on('all', notify)
+  // AGENTS.md export: regenerated after every board change, on its own 2s
+  // debounce (separate from the 80ms UI-refresh one above — this one writes
+  // into the owner's actual codebase, so it can afford to be lazier).
+  let agentsMdTimer: NodeJS.Timeout | null = null
+  const scheduleAgentsMdSync = (): void => {
+    if (agentsMdTimer) clearTimeout(agentsMdTimer)
+    agentsMdTimer = setTimeout(() => syncAllAgentsMd(listBundles()), 2000)
+  }
+  watcher.on('all', () => {
+    notify()
+    scheduleAgentsMdSync()
+  })
   watcher.on('error', (err) => console.error('[specdrive] watcher error:', err))
   // Seed the notifier's snapshots silently so the first real change after
   // boot doesn't look like every task just flipped to done.
   checkForNotifications()
+  scheduleAgentsMdSync()
   app.on('before-quit', () => {
     watcher.close().catch(() => {})
   })

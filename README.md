@@ -22,6 +22,10 @@ You describe what you want to build — in your own words. Your AI coding agent 
 
 The loop never really ends: new ideas become new specs, new tasks, new builds.
 
+## The house
+
+SpecDrive is the house where any coding agent comes to read the rules and drive the project — not just one agent's memory. The MCP server is the single write path: every spec, task and decision goes through it, so the board stays the one source of truth no matter which tool is talking to it. For agents that can't speak MCP, SpecDrive also exports a generated, read-only `AGENTS.md` straight into the project's codebase — regenerated automatically, never hand-edited. Every standing rule carries provenance (who set it, when, and whether the owner approved it), and nothing an agent proposes becomes binding until the owner says so.
+
 ## Run it
 
 ```bash

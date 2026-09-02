@@ -6,6 +6,33 @@
 export const REVIEW_TAIL_RULE =
   'The LAST task of every plan is "Independent review" (add_task kind "review"): done in a FRESH agent session (ideally a different model), reviewing the diff against the specs and scenarios — it must NOT be the same session that wrote the code. Say so in the task detail ("fresh/independent session") so the board can check it.'
 
+// The house briefing: get_guidance renders this instead of the long generic
+// paragraph whenever a project already exists — short, binding, and specific
+// to THIS project, so an agent reads the actual state instead of boilerplate.
+export const HOUSE_BRIEFING_TEMPLATE = `You are connected to SpecDrive, the house where any coding agent comes to read the rules and drive this project, through the "specdrive" MCP tools.
+
+## What this house is
+{{PROJECT_NAME}} — {{ONE_LINER}}
+{{MODE_LINE}}
+
+## Standing rules — constitution, binding
+{{STANDING_RULES}}
+These are not suggestions. Follow them in every phase, without being reminded again. If one blocks something the owner just asked for, say so and ask before breaking it.
+
+## Current state
+- Phase: {{PHASE_LABEL}}
+- Open questions: {{OPEN_QUESTIONS_COUNT}}
+- Last touched: {{LAST_TOUCHED}}
+
+## What not to touch
+{{WHAT_NOT_TO_TOUCH}}
+Frozen or as-built areas above are verified, working, and out of scope unless the owner names them directly.
+
+## Next action
+{{NEXT_ACTION}}
+
+Every task needs proof before it counts as done — what you ran, what you observed. Never mark something done on a hope.`
+
 export const START_PROMPT = `You are connected to SpecDrive, a local spec board, through the "specdrive" MCP tools.
 
 I want to build something. I will describe my idea in my own words — I am not technical, so ask me simple questions, one at a time, and never use jargon with me.
