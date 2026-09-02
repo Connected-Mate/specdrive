@@ -86,7 +86,7 @@ export function Sidebar({
       2
     )
     window.specdrive.copyToClipboard(snippet)
-    toast('MCP config copied — paste it into your agent’s MCP settings')
+    toast('Setup copied — paste it into your AI tool’s settings')
   }
 
   const runCheck = async (id: DetectedAgent['id']): Promise<void> => {
@@ -334,10 +334,10 @@ export function Sidebar({
               listed here.
             </p>
             <p className="ad-meta faded">
-              Copy this and paste it into your agent’s MCP settings (an entry named “specdrive”).
+              Copy this and paste it into your AI tool’s settings (an entry named “specdrive”).
             </p>
             <button className="pill pill-quiet" style={{ marginTop: 6 }} onClick={copyGenericConfig}>
-              Copy the MCP config
+              Copy the setup
             </button>
           </div>
         )}

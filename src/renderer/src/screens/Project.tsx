@@ -32,6 +32,26 @@ const STATUS_LABEL: Record<Spec['status'], string> = {
   confirmed: 'Confirmed'
 }
 
+const TAG_LABEL: Record<string, string> = {
+  discovery: 'Found while building',
+  skip: 'Checks skipped — see why',
+  'as-built': 'How it works today'
+}
+
+const KIND_LABEL: Record<string, string> = {
+  test: 'Tests',
+  security: 'Safety pass',
+  review: 'Independent review',
+  'safety-net': 'Safety net'
+}
+
+/** "1st", "2nd", "3rd", "4th"… */
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`
+}
+
 type Tab = 'board' | 'scenarios' | 'sketches' | 'blueprint' | 'plan' | 'activity'
 
 const SCENARIO_STATUS: Record<string, { label: string; cls: string }> = {
@@ -290,7 +310,7 @@ function BoardTab({
                 )}
                 {s.tags.slice(0, 2).map((t) => (
                   <span key={t} className="badge">
-                    {t}
+                    {TAG_LABEL[t] ?? t}
                   </span>
                 ))}
               </div>
@@ -365,14 +385,23 @@ function TaskRow({
         ? `running for ${humanizeDuration(Date.now() - new Date(task.startedAt).getTime())}`
         : null
 
+  const isStaleDone = task.status === 'done' && !!task.stale
+  const lastAttempt = task.attempts && task.attempts.length ? task.attempts[task.attempts.length - 1] : undefined
+  const failedLabel =
+    (task.attempts?.length ?? 0) >= 2 ? 'Tried 2 ways — needs your call' : "Didn't work — trying differently"
+
   return (
     <div
-      className={`task-row ${task.status.replace('_', '-')}${sub ? ' sub' : ''}`}
+      className={`task-row ${task.status.replace('_', '-')}${sub ? ' sub' : ''}${isStaleDone ? ' stale' : ''}`}
       style={{ '--i': index } as React.CSSProperties}
     >
-      <span className={`task-check ${task.status.replace('_', '-')}`}>
-        {task.status === 'done' && <TickIcon size={10} />}
-      </span>
+      {isStaleDone ? (
+        <span className="task-check-pill">Needs a quick re-check</span>
+      ) : (
+        <span className={`task-check ${task.status.replace('_', '-')}`}>
+          {task.status === 'done' && <TickIcon size={10} />}
+        </span>
+      )}
       <div className="body">
         <div className="title-line">
           <span className="title">{task.title}</span>
@@ -407,9 +436,16 @@ function TaskRow({
             </button>
           ) : null}
         </div>
-        {task.status !== 'done' && <div className="detail">{task.detail}</div>}
+        {task.status !== 'done' && task.status !== 'failed' && <div className="detail">{task.detail}</div>}
+        {task.status === 'failed' && (
+          <div className="task-fail">
+            <span className="badge badge-gap">{failedLabel}</span>
+            {lastAttempt?.note && <div className="fail-note">{lastAttempt.note}</div>}
+          </div>
+        )}
         {task.note && <div className="note">{task.note}</div>}
         {task.status === 'done' && task.proof && <ProofLine proof={task.proof} />}
+        {isStaleDone && task.staleReason && <div className="stale-reason">{task.staleReason}</div>}
         <div className="task-badges">
           {task.status === 'blocked' && <span className="badge">Blocked</span>}
           {!!waitsFor && (
@@ -417,6 +453,15 @@ function TaskRow({
               Waits for {waitsFor} step{waitsFor > 1 ? 's' : ''}
             </span>
           )}
+          {task.status === 'done' && (task.attempts?.length ?? 0) > 0 && (
+            <span className="badge">Worked on the {ordinal((task.attempts?.length ?? 0) + 1)} try</span>
+          )}
+          {!!task.reopenCount && task.reopenCount > 0 && (
+            <span className={`badge${task.reopenCount > 2 ? ' badge-gap' : ''}`}>
+              {task.reopenCount > 2 ? `Reopened ${task.reopenCount}× — waiting for you` : `Reopened ${task.reopenCount}×`}
+            </span>
+          )}
+          {task.kind && <span className="badge">{KIND_LABEL[task.kind] ?? task.kind}</span>}
         </div>
         <OwnerNotes projectId={projectId} target={{ kind: 'task', id: task.id }} comments={comments ?? []} />
       </div>
@@ -449,6 +494,26 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
     const t = setInterval(() => forceTick((n) => n + 1), 30000)
     return () => clearInterval(t)
   }, [hasRunning])
+
+  const staleCount = tasks.filter((t) => t.status === 'done' && t.stale).length
+  const failedCount = tasks.filter((t) => t.status === 'failed').length
+  const [explainerSeen] = useState<boolean>(() => {
+    try {
+      return !!localStorage.getItem('specdrive:recheck-explainer-seen')
+    } catch {
+      return true
+    }
+  })
+  useEffect(() => {
+    if ((staleCount > 0 || failedCount > 0) && !explainerSeen) {
+      try {
+        localStorage.setItem('specdrive:recheck-explainer-seen', '1')
+      } catch {
+        // ignore
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staleCount, failedCount])
 
   if (!tasks.length) {
     return (
@@ -489,6 +554,24 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
       )}
       {noOpenComments && (
         <p className="drop-hint">Click a step to leave a note — your agent reads it on its next pass.</p>
+      )}
+      {(staleCount > 0 || failedCount > 0) && (
+        <div className="recheck-summary">
+          <p className="recheck-line">
+            {[
+              staleCount > 0 ? `${staleCount} step${staleCount > 1 ? 's' : ''} need a quick re-check` : null,
+              failedCount > 0 ? `${failedCount} didn’t work yet` : null
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
+          {!explainerSeen && (
+            <p className="recheck-explainer">
+              Later steps sometimes change what earlier steps relied on — the AI re-checks those before moving
+              on.
+            </p>
+          )}
+        </div>
       )}
       <div className="progress-row">
         <div className="progress-track">

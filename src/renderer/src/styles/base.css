@@ -1681,6 +1681,32 @@ body.is-fullscreen .rail-drag {
   animation: pulse 1.6s ease-in-out infinite;
 }
 
+.task-check.failed {
+  border-color: #a05a2c;
+  background: rgba(232, 168, 124, 0.22);
+  color: #a05a2c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.task-check.failed::after {
+  content: '!';
+}
+
+.task-check-pill {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  margin-top: 1px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(232, 168, 124, 0.22);
+  color: #a05a2c;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -1775,6 +1801,42 @@ body.is-fullscreen .rail-drag {
 
 .proof-label {
   font-weight: 500;
+}
+
+.stale-reason {
+  font-size: 11.5px;
+  color: var(--smoke);
+  line-height: 1.45;
+  margin-top: 4px;
+}
+
+.task-fail {
+  margin-top: 6px;
+}
+
+.fail-note {
+  font-size: 11.5px;
+  color: var(--smoke);
+  line-height: 1.45;
+  margin-top: 4px;
+}
+
+.recheck-summary {
+  margin-bottom: 14px;
+}
+
+.recheck-line {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #a05a2c;
+}
+
+.recheck-explainer {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  color: var(--smoke);
+  line-height: 1.45;
 }
 
 .proof-text.clamped {

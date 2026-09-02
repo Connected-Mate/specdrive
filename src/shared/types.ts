@@ -62,7 +62,7 @@ export interface Spec {
   updatedAt: string
 }
 
-export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked'
+export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked' | 'failed'
 
 export interface Task {
   id: string
@@ -86,6 +86,30 @@ export interface Task {
   note?: string
   /** Evidence of verification recorded at "done": what was run, what was observed */
   proof?: string
+  /** Log of tries when a task didn't work the first time */
+  attempts?: { ts: string; note: string; nextMove: string }[]
+  /** What the agent plans to do next after the latest attempt */
+  nextMove?: string
+  /** Files/areas this task touched — used to spot when a later step affects an earlier one */
+  touches?: string[]
+  /** True when a later step may have invalidated this done task's proof */
+  stale?: boolean
+  /** When it was marked stale */
+  staleSince?: string
+  /** Which step/change made it stale, plain words */
+  staleBecause?: string
+  /** Plain-words explanation of why it needs a re-check */
+  staleReason?: string
+  /** How many times this task has been reopened after being marked done */
+  reopenCount?: number
+  /** When it was last re-checked after going stale */
+  recheckedAt?: string
+  /** Evidence recorded at the last re-check */
+  recheckProof?: string
+  /** pid of the agent session currently working this task */
+  claimedBy?: number
+  /** What kind of step this is, for a small plain-words tag */
+  kind?: string
   createdAt: string
   updatedAt: string
 }
