@@ -195,3 +195,36 @@ test('12. HTML sketches are sanitized', async () => {
   const html = fs.readFileSync(path.join(HOME, '.specdrive', 'projects', pid, 'wireframes', wf.file), 'utf8')
   assert.doesNotMatch(html, /onerror|onclick|<script|javascript:/i)
 })
+
+test('13. get_next_task never violates its output schema (budget, breaker, stale, rework, normal, empty)', async () => {
+  const { pid, tasks } = await projectInBuild('t13')
+  const shapes = []
+  shapes.push(await call('get_next_task', { project: pid })) // normal
+  for (let i = 0; i < 7; i++) shapes.push(await call('get_next_task', { project: pid })) // breaker trips
+  await start(pid, tasks.a); await done(pid, tasks.a, { touches: ['x'] })
+  await start(pid, tasks.b); await done(pid, tasks.b, { touches: ['x'] })
+  shapes.push(await call('get_next_task', { project: pid })) // stale
+  await call('recheck_task', { project: pid, task_id: tasks.a, outcome: 'holds', proof: 'ok' })
+  for (const id of [tasks.test, tasks.security, tasks.review]) { await start(pid, id); await done(pid, id) }
+  shapes.push(await call('get_next_task', { project: pid })) // empty
+  for (const r of shapes) assert.equal(r.isError, false, r.text.slice(0, 120))
+})
+
+test('14. two clients writing the same board in parallel lose nothing', async () => {
+  const p = await call('create_project', { name: 't14', one_liner: 't', idea: 't' })
+  const pid = idOf(p)
+  const t2 = new StdioClientTransport({ command: process.execPath, args: [SERVER], env: { ...process.env, HOME } })
+  const c2 = new Client({ name: 'second', version: '1.0' })
+  await c2.connect(t2)
+  const jobs = []
+  for (let i = 0; i < 15; i++) {
+    jobs.push(client.callTool({ name: 'add_spec', arguments: { project: pid, category: 'features', title: `A${i}`, content: 'x' } }))
+    jobs.push(c2.callTool({ name: 'add_spec', arguments: { project: pid, category: 'features', title: `B${i}`, content: 'x' } }))
+  }
+  await Promise.all(jobs)
+  await c2.close()
+  const dir = path.join(HOME, '.specdrive', 'projects', pid)
+  const specs = JSON.parse(fs.readFileSync(path.join(dir, 'specs.json'), 'utf8'))
+  assert.equal(specs.length, 30)
+  assert.ok(!fs.readdirSync(dir).some((f) => f.includes('.corrupt-')), 'a corrupt file was quarantined')
+})
