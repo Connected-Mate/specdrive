@@ -41,7 +41,15 @@ export function initUpdater(): void {
 
   void (async () => {
     try {
-      const { autoUpdater } = await import('electron-updater')
+      // The packaged main bundle sees electron-updater as CommonJS: the dynamic
+      // import may hand back { default: { autoUpdater } } instead of the named
+      // export. Accept both — this exact line was silently killing updates.
+      const mod = (await import('electron-updater')) as unknown as {
+        autoUpdater?: import('electron-updater').AppUpdater
+        default?: { autoUpdater?: import('electron-updater').AppUpdater }
+      }
+      const autoUpdater = mod.autoUpdater ?? mod.default?.autoUpdater
+      if (!autoUpdater) throw new Error('electron-updater exported no autoUpdater')
 
       autoUpdater.autoDownload = true
       autoUpdater.autoInstallOnAppQuit = true
@@ -132,7 +140,12 @@ export async function checkForUpdatesInteractive(): Promise<void> {
     return
   }
   try {
-    const { autoUpdater } = await import('electron-updater')
+    const mod = (await import('electron-updater')) as unknown as {
+      autoUpdater?: import('electron-updater').AppUpdater
+      default?: { autoUpdater?: import('electron-updater').AppUpdater }
+    }
+    const autoUpdater = mod.autoUpdater ?? mod.default?.autoUpdater
+    if (!autoUpdater) throw new Error('electron-updater exported no autoUpdater')
     const result = await autoUpdater.checkForUpdates()
     const remote = result?.updateInfo?.version
     if (remote && remote !== app.getVersion()) {
