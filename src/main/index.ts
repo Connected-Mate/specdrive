@@ -51,7 +51,7 @@ function createWindow(): void {
 
   // Dev utility: SPECDRIVE_SHOT=/path.png [SPECDRIVE_ROUTE=projectId] captures a
   // screenshot of the app and exits — used for automated visual checks.
-  const shotPath = process.env.SPECDRIVE_SHOT
+  const shotPath = isDev ? process.env.SPECDRIVE_SHOT : undefined
   if (shotPath) {
     win.webContents.on('did-finish-load', () => {
       const route = process.env.SPECDRIVE_ROUTE

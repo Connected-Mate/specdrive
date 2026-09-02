@@ -948,6 +948,35 @@ const RULE_PRESETS = {
   ]
 }
 
+
+/** Rules steer every future session — a change must be visible and, when the
+ *  client allows it, confirmed by the owner. Never silent. */
+function logFolderChange(folderId, summary) {
+  for (const pid of listProjectIds()) {
+    const p = readJson(path.join(projectDir(pid), 'project.json'), null)
+    if (p?.folderId === folderId) logActivity(pid, 'agent', 'folder_rules', summary)
+  }
+  try {
+    fs.appendFileSync(path.join(FOLDERS_DIR, `${folderId}.log`), `${now()} ${summary}\n`)
+  } catch {}
+}
+
+async function confirmRulesWithOwner(extra, folderName, rules) {
+  const answer = await tryElicit(
+    extra,
+    `The AI wants to set ${rules.length} standing rule(s) on folder "${folderName}". These will steer every future session on every project in it:\n` +
+      rules.map((r) => `• ${r.title}: ${r.content}`).join('\n') +
+      `\n\nApprove?`,
+    {
+      type: 'object',
+      properties: { approve: { type: 'boolean', title: 'Approve these house rules' } },
+      required: ['approve']
+    }
+  )
+  if (answer === null) return { asked: false, approved: true } // client cannot ask — logged instead
+  return { asked: true, approved: answer.action === 'accept' && Boolean(answer.content?.approve) }
+}
+
 server.registerTool(
   'create_folder',
   {
@@ -965,14 +994,19 @@ server.registerTool(
     },
     annotations: WRITES
   },
-  async ({ name, description, rules, presets }) => {
+  async ({ name, description, rules, presets }, extra) => {
     fs.mkdirSync(FOLDERS_DIR, { recursive: true })
     let id = slugify(name)
     if (fs.existsSync(path.join(FOLDERS_DIR, `${id}.json`))) id = `${id}-${uid().slice(0, 4)}`
     const presetRules = (presets ?? []).flatMap((p) => RULE_PRESETS[p])
     const mergedRules = [...presetRules, ...(rules ?? [])].slice(0, 30)
+    if (mergedRules.length) {
+      const c = await confirmRulesWithOwner(extra, name, mergedRules)
+      if (c.asked && !c.approved) return fail('The owner declined these house rules. Ask them what they want instead — do not retry unchanged.')
+    }
     const folder = { id, name, description, rules: mergedRules, createdAt: now(), updatedAt: now() }
     writeJson(path.join(FOLDERS_DIR, `${id}.json`), folder)
+    logFolderChange(id, `Folder "${name}" created with ${mergedRules.length} house rule(s): ${mergedRules.map((r) => r.title).join(', ') || 'none'}`)
     return ok(
       `Folder "${name}" created (id: ${id}) with ${folder.rules.length} house rule(s)${presets?.length ? ` (presets: ${presets.join(', ')})` : ''}. Every project placed in it will carry these rules through every phase. Assign projects with create_project's folder param or assign_project_folder; manage rules with set_folder_rules.`
     )
@@ -991,16 +1025,23 @@ server.registerTool(
     },
     annotations: UPDATES
   },
-  async ({ folder, rules }) => {
+  async ({ folder, rules }, extra) => {
     const f = resolveFolder(folder)
     if (!f) {
       const ids = listFolderIds()
       return fail(`Unknown folder "${folder}". Existing: ${ids.length ? ids.join(', ') : '(none — create_folder first)'}`)
     }
+    const c = await confirmRulesWithOwner(extra, f.name, rules)
+    if (c.asked && !c.approved) return fail('The owner declined these house rules. Ask them what they want instead — do not retry unchanged.')
+    const before = new Set((f.rules ?? []).map((r) => r.title))
+    const after = new Set(rules.map((r) => r.title))
+    const added = rules.filter((r) => !before.has(r.title)).map((r) => r.title)
+    const removed = (f.rules ?? []).filter((r) => !after.has(r.title)).map((r) => r.title)
     f.rules = rules
     f.updatedAt = now()
     writeJson(path.join(FOLDERS_DIR, `${f.id}.json`), f)
-    return ok(`Folder "${f.name}" now has ${rules.length} house rule(s). They apply immediately to every project in it.`)
+    logFolderChange(f.id, `House rules changed on "${f.name}"${added.length ? ` — added: ${added.join(', ')}` : ''}${removed.length ? ` — removed: ${removed.join(', ')}` : ''}`)
+    return ok(`Folder "${f.name}" now has ${rules.length} house rule(s). They apply immediately to every project in it.${c.asked ? ' The owner approved them.' : ' The change is recorded in the activity feed of every project in the folder.'}`)
   }
 )
 
@@ -1712,11 +1753,7 @@ server.registerTool(
     }
     const file = `${wid}.html`
     // Strip scripts defensively — wireframes are sketches, not apps.
-    const stripped = html
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-      .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
-      .replace(/javascript:/gi, '')
+    const stripped = sanitizeHtml(html)
     const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">`
     const safe = /<head[^>]*>/i.test(stripped)
       ? stripped.replace(/<head[^>]*>/i, (m) => `${m}${csp}`)
@@ -1732,12 +1769,24 @@ server.registerTool(
   }
 )
 
-const sanitizeHtml = (html) =>
-  html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
-    .replace(/javascript:/gi, '')
+// Sketches are rendered in sandboxed iframes under a CSP with no script-src,
+// so this is defence in depth — but it must still hold on its own: run to a
+// fixpoint (single-pass replacement can *create* "javascript:"), catch
+// unquoted handlers and unclosed dangerous tags.
+function sanitizeHtml(html) {
+  let out = String(html)
+  for (let i = 0; i < 6; i++) {
+    const before = out
+    out = out
+      .replace(/<\s*(script|iframe|object|embed|link|meta|base|form)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+      .replace(/<\s*(script|iframe|object|embed|link|meta|base|form)\b[^>]*\/?>/gi, '')
+      .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+      .replace(/(j[\s\x00-\x1f]*a[\s\x00-\x1f]*v[\s\x00-\x1f]*a[\s\x00-\x1f]*s[\s\x00-\x1f]*c[\s\x00-\x1f]*r[\s\x00-\x1f]*i[\s\x00-\x1f]*p[\s\x00-\x1f]*t|v[\s\x00-\x1f]*b[\s\x00-\x1f]*s[\s\x00-\x1f]*c[\s\x00-\x1f]*r[\s\x00-\x1f]*i[\s\x00-\x1f]*p[\s\x00-\x1f]*t|data)[\s\x00-\x1f]*:/gi, 'blocked:')
+      .replace(/&#x?0*(6a|4a|106|74);?/gi, '') // j / J entity-encoded
+    if (out === before) break
+  }
+  return out
+}
 
 server.registerTool(
   'set_plan_doc',
