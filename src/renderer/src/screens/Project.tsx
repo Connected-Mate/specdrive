@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import type { ProjectBundle, Spec, SpecCategory, Wireframe } from '@shared/types'
-import { SPEC_CATEGORIES } from '@shared/types'
-import { Markdown } from '@/lib/markdown'
+import type { ProjectBundle, Wireframe } from '@shared/types'
 import { TickIcon } from '@/components/Icons'
 import { FlowMap, type FlowThumb } from '@/components/FlowMap'
 import { KitWireframe } from '@/components/wireframe-kit/KitWireframe'
@@ -9,34 +7,14 @@ import type { PlanWireframeNode } from '@/components/wireframe-kit/types'
 import { CursorScene } from '@/components/scene/CursorScene'
 import { useSceneAgents } from '@/components/scene/useSceneAgents'
 import { PlanDoc } from '@/components/PlanDoc'
-import { SpecDetail } from '@/components/SpecDetail'
+import { BoardDoc } from '@/components/BoardDoc'
+import { BuildStrip } from '@/components/BuildStrip'
+import { KeepInMind, keepInMindCount } from '@/components/KeepInMind'
 import { OwnerNotes } from '@/components/OwnerNotes'
+import { humanizeDuration } from '@/lib/labels'
+import { WORLD_LINE, WORLD_WORD, worldColor, worldOf } from '@/lib/mode'
 import { timeAgo } from '@/lib/useLive'
 import { useToast } from '@/components/Toast'
-
-const CATEGORY_LABEL: Record<SpecCategory, string> = {
-  vision: 'Vision',
-  audience: 'Who it’s for',
-  features: 'What it does',
-  design: 'Look & feel',
-  tech: 'Under the hood',
-  data: 'Data',
-  research: 'Research',
-  risks: 'Hard parts',
-  decisions: 'Decisions'
-}
-
-const STATUS_LABEL: Record<Spec['status'], string> = {
-  draft: 'Draft',
-  challenged: 'Stress-tested',
-  confirmed: 'Confirmed'
-}
-
-const TAG_LABEL: Record<string, string> = {
-  discovery: 'Found while building',
-  skip: 'Checks skipped — see why',
-  'as-built': 'How it works today'
-}
 
 const KIND_LABEL: Record<string, string> = {
   test: 'Tests',
@@ -52,7 +30,7 @@ function ordinal(n: number): string {
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`
 }
 
-type Tab = 'board' | 'scenarios' | 'sketches' | 'blueprint' | 'plan' | 'activity'
+type Tab = 'board' | 'scenarios' | 'sketches' | 'blueprint' | 'plan' | 'activity' | 'memory'
 
 const SCENARIO_STATUS: Record<string, { label: string; cls: string }> = {
   draft: { label: 'To walk', cls: '' },
@@ -108,234 +86,6 @@ function ScenariosTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element 
       ))}
     </div>
   )
-}
-
-function DocumentsStrip({
-  bundle,
-  onOpen
-}: {
-  bundle: ProjectBundle
-  onOpen: (doc: ProjectBundle['documents'][number]) => void
-}): React.JSX.Element | null {
-  if (!bundle.documents.length) return null
-  return (
-    <div className="docs-strip">
-      <span className="rail-mini-label">Your documents</span>
-      <div className="docs-row">
-        {bundle.documents.map((d, i) => (
-          <button
-            key={d.id}
-            className="doc-chip"
-            style={{ '--i': i } as React.CSSProperties}
-            onClick={() => onOpen(d)}
-          >
-            <span className="doc-icon">{d.kind === 'image' ? '🖼' : '▤'}</span>
-            <span className="doc-name">{d.title}</span>
-            <span className="doc-meta">
-              {d.kind} · {(d.size / 1000).toFixed(1)}k
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function BoardTab({
-  bundle,
-  specs,
-  freshIds,
-  projectName
-}: {
-  bundle: ProjectBundle
-  specs: Spec[]
-  freshIds: Set<string>
-  projectName: string
-}): React.JSX.Element {
-  const [openSpec, setOpenSpec] = useState<Spec | null>(null)
-  const [openDoc, setOpenDoc] = useState<ProjectBundle['documents'][number] | null>(null)
-  const [docText, setDocText] = useState<string>('')
-  const [imgSrc, setImgSrc] = useState<string>('')
-  useEffect(() => {
-    if (!openDoc) return
-    if (openDoc.kind === 'image') {
-      window.specdrive.readImage(bundle.project.id, openDoc.file).then(setImgSrc).catch(() => setImgSrc(''))
-    } else {
-      window.specdrive
-        .readDocument(bundle.project.id, openDoc.file)
-        .then(setDocText)
-        .catch(() => setDocText('Document not found.'))
-    }
-  }, [openDoc, bundle.project.id])
-
-  // Drop an image anywhere on the board → stored with the documents.
-  const toast = useToast()
-  const onDrop = async (e: React.DragEvent): Promise<void> => {
-    e.preventDefault()
-    for (const f of Array.from(e.dataTransfer.files)) {
-      if (!/image\/(png|jpe?g|gif|webp)/.test(f.type) && !/\.(png|jpe?g|gif|webp)$/i.test(f.name)) {
-        toast(`"${f.name}" skipped — images only (png, jpg, gif, webp)`)
-        continue
-      }
-      if (f.size > 8 * 1024 * 1024) {
-        toast(`"${f.name}" is too large — 8 MB max`)
-        continue
-      }
-      const buf = await f.arrayBuffer()
-      let bin = ''
-      const bytes = new Uint8Array(buf)
-      for (let i = 0; i < bytes.length; i += 0x8000) {
-        bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-      }
-      const err = await window.specdrive.addImage(bundle.project.id, f.name, btoa(bin))
-      toast(err || `"${f.name}" added to the project`)
-    }
-  }
-  const groups = useMemo(() => {
-    const byCat = new Map<SpecCategory, Spec[]>()
-    for (const cat of SPEC_CATEGORIES) {
-      const items = specs.filter((s) => s.category === cat)
-      if (items.length) byCat.set(cat, items)
-    }
-    return byCat
-  }, [specs])
-
-  if (!specs.length) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, height: '100%' }}>
-        <CursorScene word={projectName} compact />
-        <p className="empty" style={{ padding: '8px 24px' }}>
-          The board is listening — as you talk with your AI agent,
-          <br />
-          everything it learns lands here, live.
-        </p>
-      </div>
-    )
-  }
-
-  if (openDoc && openDoc.kind === 'image') {
-    return (
-      <div className="spec-detail">
-        <div className="spec-detail-bar">
-          <div>
-            <span className="badge">Image</span>
-            <span className="badge" style={{ marginLeft: 6 }}>
-              {(openDoc.size / 1000).toFixed(0)} KB
-            </span>
-          </div>
-          <button className="pill pill-quiet" onClick={() => setOpenDoc(null)}>
-            Close
-          </button>
-        </div>
-        <div className="image-viewer">
-          <h2>{openDoc.title}</h2>
-          {imgSrc ? <img src={imgSrc} alt={openDoc.title} /> : <p className="empty">Loading…</p>}
-        </div>
-      </div>
-    )
-  }
-
-  if (openDoc) {
-    return (
-      <SpecDetail
-        spec={{
-          id: openDoc.id,
-          category: 'design',
-          title: openDoc.title,
-          content: docText || 'Loading…',
-          status: 'confirmed',
-          tags: [openDoc.kind],
-          createdAt: openDoc.createdAt,
-          updatedAt: openDoc.createdAt
-        }}
-        onClose={() => setOpenDoc(null)}
-      />
-    )
-  }
-
-  if (openSpec) {
-    const live = specs.find((x) => x.id === openSpec.id) ?? openSpec
-    return <SpecDetail spec={live} onClose={() => setOpenSpec(null)} />
-  }
-
-  return (
-    <div onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
-    <DocumentsStrip bundle={bundle} onOpen={setOpenDoc} />
-    {!bundle.documents.length && (
-      <p className="drop-hint">Tip — drop screenshots or reference images anywhere here to keep them with the project.</p>
-    )}
-    {!(bundle.comments ?? []).some((c) => c.status === 'open') && (
-      <p className="drop-hint">Click a card to leave a note — your agent reads it on its next pass.</p>
-    )}
-    <div className="board">
-      {[...groups.entries()].map(([cat, items]) => (
-        <div className="board-group" key={cat}>
-          <div className="board-group-head">
-            <span className="label">{CATEGORY_LABEL[cat]}</span>
-            <span className="rule" />
-            <span className="n">{items.length}</span>
-          </div>
-          {items.map((s, i) => (
-            <div
-              key={s.id}
-              role="button"
-              tabIndex={0}
-              className={`spec-card clickable${freshIds.has(s.id) ? ' fresh' : ''}`}
-              style={{ '--i': i } as React.CSSProperties}
-              onClick={() => setOpenSpec(s)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') setOpenSpec(s)
-              }}
-            >
-              <h4>{s.title}</h4>
-              <div className="content-md">
-                <Markdown text={s.content} />
-              </div>
-              {s.acceptance && (
-                <div className="acceptance-note">
-                  <strong>How we’ll know it works:</strong> {s.acceptance}
-                </div>
-              )}
-              {s.challengeNote && (
-                <div className="challenge-note">
-                  <strong>Challenged:</strong> {s.challengeNote}
-                </div>
-              )}
-              <div className="foot">
-                <span className={`badge${s.status === 'confirmed' ? ' badge-blue' : ''}`}>
-                  {STATUS_LABEL[s.status]}
-                </span>
-                {s.difficulty != null && s.difficulty >= 4 && (
-                  <span className="badge">Hard · {s.difficulty}/5</span>
-                )}
-                {s.tags.slice(0, 2).map((t) => (
-                  <span key={t} className="badge">
-                    {TAG_LABEL[t] ?? t}
-                  </span>
-                ))}
-              </div>
-              <OwnerNotes
-                projectId={bundle.project.id}
-                target={{ kind: 'spec', id: s.id }}
-                comments={bundle.comments ?? []}
-              />
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-    </div>
-  )
-}
-
-/** "4 min", "1h 12min", "under a min" — subtle, data not decoration. */
-function humanizeDuration(ms: number): string {
-  const totalMin = Math.round(ms / 60000)
-  if (totalMin < 1) return 'under a min'
-  if (totalMin < 60) return `${totalMin} min`
-  const h = Math.floor(totalMin / 60)
-  const m = totalMin % 60
-  return m ? `${h}h ${m}min` : `${h}h`
 }
 
 /** "How we checked — <proof>" under a done task — the evidence, not just the checkmark. */
@@ -482,7 +232,13 @@ function BlueprintTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element 
   return <PlanDoc doc={bundle.planDoc} />
 }
 
-function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
+function PlanTab({
+  bundle,
+  onOpenPlan
+}: {
+  bundle: ProjectBundle
+  onOpenPlan: () => void
+}): React.JSX.Element {
   const { tasks } = bundle
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
@@ -524,7 +280,6 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
       </div>
     )
   }
-  const done = tasks.filter((t) => t.status === 'done').length
   const roots = tasks.filter((t) => !t.parentId).sort((a, b) => a.order - b.order)
   const childrenOf = (id: string): typeof tasks =>
     tasks.filter((t) => t.parentId === id).sort((a, b) => a.order - b.order)
@@ -542,6 +297,7 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   const noOpenComments = !(bundle.comments ?? []).some((c) => c.status === 'open')
   return (
     <>
+      <BuildStrip bundle={bundle} onOpenPlan={onOpenPlan} />
       <div className="plan-wrap">
       {bundle.drift?.moved && (
         <div className="plandoc-callout tone-risk drift-banner">
@@ -573,14 +329,6 @@ function PlanTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
           )}
         </div>
       )}
-      <div className="progress-row">
-        <div className="progress-track">
-          <div className="progress-fill" style={{ width: `${(done / tasks.length) * 100}%` }} />
-        </div>
-        <span className="pct">
-          {done}/{tasks.length} · {Math.round((done / tasks.length) * 100)}%
-        </span>
-      </div>
       {roots.map((t) => {
         const kids = childrenOf(t.id)
         const isCollapsed = collapsed.has(t.id)
@@ -845,14 +593,38 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
     }
   }, [project.phase, tasks.length])
 
-  const tabs: { id: Tab; label: string; count: number; divider?: boolean }[] = [
+  const world = worldOf(project.phase)
+  const accent = worldColor(project.phase)
+  // The spec cluster keeps a dusk hue even while building, so the two sides
+  // stay told apart by colour and not only by position.
+  const specAccent = world === 'spec' ? accent : '#d98d63'
+  const memoCount = keepInMindCount(bundle)
+
+  const specTabs: { id: Tab; label: string; count: number }[] = [
     { id: 'board', label: 'Board', count: specs.length },
     { id: 'scenarios', label: 'Scenarios', count: bundle.scenarios.length },
     { id: 'sketches', label: 'Screens', count: wireframes.length },
-    { id: 'blueprint', label: 'The plan', count: bundle.planDoc ? 1 : 0 },
-    { id: 'plan', label: 'Build steps', count: tasks.length, divider: true },
+    { id: 'blueprint', label: 'The plan', count: bundle.planDoc ? 1 : 0 }
+  ]
+  const buildTabs: { id: Tab; label: string; count: number }[] = [
+    { id: 'plan', label: 'Build steps', count: tasks.length },
     { id: 'activity', label: 'Activity', count: activity.length }
   ]
+
+  const renderTab = (t: { id: Tab; label: string; count: number }): React.JSX.Element => (
+    <button
+      key={t.id}
+      role="tab"
+      aria-selected={tab === t.id}
+      className={`tab${tab === t.id ? ' active' : ''}`}
+      onClick={() => setTab(t.id)}
+    >
+      {t.label}
+      {t.count > 0 && (t.id === 'board' || t.id === 'plan') && (
+        <span className="count">{t.count}</span>
+      )}
+    </button>
+  )
 
   // One plain sentence under the tabs so nobody gets lost between them.
   const TAB_HINT: Record<Tab, string> = {
@@ -861,48 +633,80 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
     sketches: 'Rough sketches of each screen, and the map of how they link together.',
     blueprint: 'The plan, readable like a magazine page: what we build, how, the decisions and the risks.',
     plan: 'The ordered to-do list the AI follows while building — each step verified before it turns green.',
-    activity: 'The diary: every change the AI made to this project, most recent first.'
+    activity: 'The diary: every change the AI made to this project, most recent first.',
+    memory: 'The things this project must never forget — rules, papers, decisions, open questions.'
   }
 
   return (
-    <main className="content">
+    <main
+      className={`content world-${world}`}
+      style={{ '--world-color': accent } as React.CSSProperties}
+    >
       <div className="content-head">
         <div className="content-title">
           {bundle.folder && <span className="one-liner">{bundle.folder.name}</span>}
         </div>
         <ExportButton projectId={project.id} />
-        <div className="tabs">
-          {tabs.map((t) => (
-            <React.Fragment key={t.id}>
-              {t.divider && <span className="tab-divider" />}
-              <button
-                className={`tab${tab === t.id ? ' active' : ''}`}
-                onClick={() => setTab(t.id)}
-              >
-                {t.label}
-                {t.count > 0 && t.id !== 'blueprint' && <span className="count">{t.count}</span>}
-              </button>
-            </React.Fragment>
-          ))}
-        </div>
       </div>
       <CursorScene
         variant="header"
         word={project.name}
-        caption={project.oneLiner}
+        caption={
+          <>
+            <span className="scene-mode">{WORLD_WORD[world]}</span>
+            {project.oneLiner || WORLD_LINE[world]}
+          </>
+        }
         agents={crew}
         spotlight={spotlight}
       />
+      <div className="tab-bar" role="tablist" aria-label="Project sections">
+        <div
+          className={`tab-cluster${world === 'spec' ? ' current' : ''}`}
+          style={
+            { '--cluster-color': specAccent, '--cluster-soft': `${specAccent}1f` } as React.CSSProperties
+          }
+        >
+          <span className="cluster-label">Spec</span>
+          <div className="tabs">{specTabs.map(renderTab)}</div>
+        </div>
+        <div
+          className={`tab-cluster${world === 'build' ? ' current' : ''}`}
+          style={
+            {
+              '--cluster-color': worldColor('build'),
+              '--cluster-soft': `${worldColor('build')}1f`
+            } as React.CSSProperties
+          }
+        >
+          <span className="cluster-label">Build</span>
+          <div className="tabs">{buildTabs.map(renderTab)}</div>
+        </div>
+        <div className="tab-cluster keep">
+          <div className="tabs">
+            <button
+              role="tab"
+              aria-selected={tab === 'memory'}
+              className={`tab${tab === 'memory' ? ' active' : ''}`}
+              onClick={() => setTab('memory')}
+            >
+              Keep in mind
+              {memoCount > 0 && <span className="count">{memoCount}</span>}
+            </button>
+          </div>
+        </div>
+      </div>
       <p className="tab-hint">{TAB_HINT[tab]}</p>
       <div className="content-body">
         {tab === 'board' && (
-          <BoardTab bundle={bundle} specs={specs} freshIds={freshIds} projectName={project.name} />
+          <BoardDoc bundle={bundle} specs={specs} freshIds={freshIds} projectName={project.name} />
         )}
         {tab === 'scenarios' && <ScenariosTab bundle={bundle} />}
         {tab === 'blueprint' && <BlueprintTab bundle={bundle} />}
-        {tab === 'plan' && <PlanTab bundle={bundle} />}
+        {tab === 'plan' && <PlanTab bundle={bundle} onOpenPlan={() => setTab('blueprint')} />}
         {tab === 'sketches' && <SketchesTab bundle={bundle} />}
         {tab === 'activity' && <ActivityTab bundle={bundle} />}
+        {tab === 'memory' && <KeepInMind bundle={bundle} />}
       </div>
     </main>
   )

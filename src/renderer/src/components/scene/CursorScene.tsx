@@ -65,7 +65,7 @@ export function CursorScene({
   /** Real agents to draw. Omitted → the decorative crew (hero scene only). */
   agents?: CursorDef[]
   /** One plain line under the name, header variant only */
-  caption?: string
+  caption?: React.ReactNode
   spotlight?: SceneSpotlight
 }): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)

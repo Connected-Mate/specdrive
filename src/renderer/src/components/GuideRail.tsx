@@ -7,6 +7,7 @@ import { clientLabel, timeAgo, useLiveSessions } from '@/lib/useLive'
 import { CopyIcon, TickIcon } from './Icons'
 import { useToast } from './Toast'
 import { PHASE_COLOR } from '@/lib/phaseColors'
+import { WORLD_LINE, WORLD_WORD, worldColor, worldOf } from '@/lib/mode'
 
 const PHASE_LABEL: Record<string, string> = {
   capture: 'Idea',
@@ -201,13 +202,21 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
   const phasePrompt = PHASE_PROMPTS.find((p) => p.phase === project.phase) ?? PHASE_PROMPTS[0]
   const currentIdx = PHASES.indexOf(project.phase)
   const deepDives = specs.filter((s) => s.category === 'risks' && (s.difficulty ?? 0) >= 4)
-  const phaseColor = PHASE_COLOR[project.phase]
+  const world = worldOf(project.phase)
+  const phaseColor = worldColor(project.phase)
 
   return (
-    <aside className="rail" style={{ '--phase-color': phaseColor } as React.CSSProperties}>
+    <aside
+      className={`rail world-${world}`}
+      style={{ '--phase-color': phaseColor } as React.CSSProperties}
+    >
       <div className="rail-drag" />
       <div className="rail-body">
         <LiveSessionCard sessions={projectSessions} />
+        <div className="rail-world">
+          <span className="rail-world-word">{WORLD_WORD[world]}</span>
+          <span className="rail-world-line">{WORLD_LINE[world]}</span>
+        </div>
         <div className="step-figure">
           <span className="mini" style={{ color: phaseColor }}>
             Step {Math.min(currentIdx + 1, 6)} of 6
