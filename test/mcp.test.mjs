@@ -401,3 +401,22 @@ test('20. a verify_command is refused outside the home folder', async () => {
   assert.equal(r.isError, true, 'ran a command outside the home folder')
   assert.match(r.text, /outside your home folder/)
 })
+
+test('21. house: provenance stamped, scoped rules filter per task, briefing on an existing house', async () => {
+  const f = await call('create_folder', { name: 'House', rules: [{ title: 'EU only', content: 'x' }, { title: 'iOS rule', content: 'y', appliesTo: 'ios/**' }] })
+  const fid = idOf(f)
+  const folder = JSON.parse(fs.readFileSync(path.join(HOME, '.specdrive', 'folders', `${fid}.json`), 'utf8'))
+  assert.match(folder.rules[0].setBy, /^agent:/)
+  assert.ok(folder.rules[0].setAt)
+  assert.equal(folder.rules[0].confirmedByOwner, false) // no elicitation in tests → never claimed
+  const { pid, tasks } = await projectInBuild('t21-' + Date.now())
+  await call('assign_project_folder', { project: pid, folder: fid })
+  // task touching only web/ must not see the iOS rule
+  await start(pid, tasks.a)
+  await done(pid, tasks.a, { touches: ['web/app.ts'] })
+  const gp = await call('get_guidance', { project: pid })
+  assert.match(gp.text, /House Briefing|house/i)
+  assert.match(gp.text, /EU only/)
+  const nt = await call('get_next_task', { project: pid })
+  assert.match(nt.text, /EU only/)
+})

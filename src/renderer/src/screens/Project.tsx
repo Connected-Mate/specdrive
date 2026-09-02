@@ -15,6 +15,13 @@ import { humanizeDuration } from '@/lib/labels'
 import { WORLD_LINE, WORLD_WORD, worldColor, worldOf } from '@/lib/mode'
 import { timeAgo } from '@/lib/useLive'
 
+const LENS_LABEL: Record<string, string> = {
+  adversarial: 'Looking for what breaks',
+  'edge-cases': 'Edge cases',
+  'verification-gap': 'What was never checked',
+  'intent-alignment': 'Does it match what was asked'
+}
+
 const KIND_LABEL: Record<string, string> = {
   test: 'Tests',
   security: 'Safety pass',
@@ -192,8 +199,27 @@ function TaskRow({
             {lastAttempt?.note && <div className="fail-note">{lastAttempt.note}</div>}
           </div>
         )}
+        {task.status === 'deferred' && (
+          <div className="task-fail">
+            <span className="badge">Set aside for now</span>
+            {lastAttempt?.note && <div className="fail-note">{lastAttempt.note}</div>}
+          </div>
+        )}
         {task.note && <div className="note">{task.note}</div>}
         {task.status === 'done' && task.proof && <ProofLine proof={task.proof} />}
+        {task.proofRun && (
+          <div className={`proof-run${task.proofRun.exitCode === 0 ? ' ok' : ' bad'}`}>
+            <span className="proof-run-label">
+              {task.proofRun.exitCode === 0 ? 'Check ran and passed' : task.proofRun.timedOut ? 'Check timed out' : 'Check ran and failed'}
+              {' · '}
+              {(task.proofRun.durationMs / 1000).toFixed(1)}s
+            </span>
+            <code className="proof-run-cmd">{task.proofRun.command}</code>
+          </div>
+        )}
+        {task.status === 'done' && task.proofRunSkipped && (
+          <div className="stale-reason">No automatic check for this step — {task.proofRunSkipped}</div>
+        )}
         {isStaleDone && task.staleReason && <div className="stale-reason">{task.staleReason}</div>}
         <div className="task-badges">
           {task.status === 'blocked' && <span className="badge">Blocked</span>}
@@ -211,6 +237,7 @@ function TaskRow({
             </span>
           )}
           {task.kind && <span className="badge">{KIND_LABEL[task.kind] ?? task.kind}</span>}
+          {task.lens && <span className="badge">{LENS_LABEL[task.lens] ?? task.lens}</span>}
         </div>
         <OwnerNotes projectId={projectId} target={{ kind: 'task', id: task.id }} comments={comments ?? []} />
       </div>

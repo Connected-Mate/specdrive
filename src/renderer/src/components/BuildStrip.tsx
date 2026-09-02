@@ -26,6 +26,7 @@ export function BuildStrip({
   const todo = tasks.filter((t) => t.status === 'todo' || t.status === 'blocked').length
   const recheck = tasks.filter((t) => t.status === 'done' && t.stale).length
   const failed = tasks.filter((t) => t.status === 'failed').length
+  const deferred = tasks.filter((t) => t.status === 'deferred').length
   const started = tasks
     .filter((t) => t.status === 'in_progress')
     .sort((a, b) => (a.startedAt ?? '').localeCompare(b.startedAt ?? ''))
@@ -37,7 +38,8 @@ export function BuildStrip({
     { n: started.length, label: 'under way' },
     { n: todo, label: 'to do' },
     { n: recheck, label: recheck === 1 ? 'needs a re-check' : 'need a re-check', tone: 'warn' },
-    { n: failed, label: 'didn’t work', tone: 'warn' }
+    { n: failed, label: 'didn’t work', tone: 'warn' },
+    { n: deferred, label: 'set aside', tone: 'warn' }
   ]
 
   return (

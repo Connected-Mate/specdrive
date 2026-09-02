@@ -4283,3 +4283,24 @@ button.memo-row:hover {
   margin-right: 7px;
   animation: dot-breathe 2.4s ease-in-out infinite;
 }
+
+/* Server-run check result on a step */
+.proof-run {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--smoke);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+.proof-run.ok .proof-run-label { color: #1e7e34; font-weight: 600; }
+.proof-run.bad .proof-run-label { color: #b3402f; font-weight: 600; }
+.proof-run-cmd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  background: var(--ash);
+  border-radius: 6px;
+  padding: 2px 7px;
+  color: var(--graphite);
+}

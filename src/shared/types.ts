@@ -64,7 +64,7 @@ export interface Spec {
   updatedAt: string
 }
 
-export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked' | 'failed'
+export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked' | 'failed' | 'deferred'
 
 export interface Task {
   id: string
@@ -112,6 +112,16 @@ export interface Task {
   claimedBy?: number
   /** What kind of step this is, for a small plain-words tag */
   kind?: string
+  /** For review steps: the angle taken */
+  lens?: 'adversarial' | 'edge-cases' | 'verification-gap' | 'intent-alignment'
+  /** Shell command the server runs itself to prove the step */
+  verifyCommand?: string
+  /** Result of the server-run check at 'done' */
+  proofRun?: { command: string; exitCode: number | null; durationMs: number; timedOut?: boolean; outputTail: string; ranAt: string }
+  /** Why no runnable check exists for this step */
+  proofRunSkipped?: string
+  /** When it was set aside after repeated failures */
+  deferredAt?: string
   createdAt: string
   updatedAt: string
 }
