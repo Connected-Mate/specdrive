@@ -14,7 +14,6 @@ import { OwnerNotes } from '@/components/OwnerNotes'
 import { humanizeDuration } from '@/lib/labels'
 import { WORLD_LINE, WORLD_WORD, worldColor, worldOf } from '@/lib/mode'
 import { timeAgo } from '@/lib/useLive'
-import { useToast } from '@/components/Toast'
 
 const KIND_LABEL: Record<string, string> = {
   test: 'Tests',
@@ -537,23 +536,6 @@ function ActivityTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   )
 }
 
-function ExportButton({ projectId }: { projectId: string }): React.JSX.Element {
-  const toast = useToast()
-  return (
-    <button
-      className="pill pill-quiet"
-      style={{ flex: 'none' }}
-      title="Export the whole project as a web page (printable to PDF)"
-      onClick={async () => {
-        const path = await window.specdrive.exportProject(projectId)
-        if (path) toast('Project exported — open the file and print to PDF if you like')
-      }}
-    >
-      Export
-    </button>
-  )
-}
-
 export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   const { project, specs, tasks, wireframes, activity } = bundle
   const [tab, setTab] = useState<Tab>('board')
@@ -642,12 +624,6 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
       className={`content world-${world}`}
       style={{ '--world-color': accent } as React.CSSProperties}
     >
-      <div className="content-head">
-        <div className="content-title">
-          {bundle.folder && <span className="one-liner">{bundle.folder.name}</span>}
-        </div>
-        <ExportButton projectId={project.id} />
-      </div>
       <CursorScene
         variant="header"
         word={project.name}

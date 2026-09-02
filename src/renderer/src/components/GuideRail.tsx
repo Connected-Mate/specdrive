@@ -137,7 +137,15 @@ function LiveSessionCard({ sessions }: { sessions: LiveSession[] }): React.JSX.E
 }
 
 /** Right rail: always-visible guidance — where you are, what to do next. */
-export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.JSX.Element {
+export function GuideRail({
+  bundle,
+  open = true,
+  onToggle
+}: {
+  bundle: ProjectBundle | null
+  open?: boolean
+  onToggle?: () => void
+}): React.JSX.Element {
   const toast = useToast()
   const sessions = useLiveSessions()
   const mcp = useMcpInfo()
@@ -148,6 +156,12 @@ export function GuideRail({ bundle }: { bundle: ProjectBundle | null }): React.J
     return (
       <aside className="rail">
         <div className="rail-drag" />
+      <button className="rail-handle" title={open ? 'Hide the guide' : 'Show the guide'} aria-label={open ? 'Hide guide' : 'Show guide'} onClick={onToggle}>
+        {open ? '›' : '‹'}
+      </button>
+      <button className="rail-handle" title={open ? 'Hide the guide' : 'Show the guide'} aria-label={open ? 'Hide guide' : 'Show guide'} onClick={onToggle}>
+        {open ? '›' : '‹'}
+      </button>
         <div className="rail-body">
           <LiveSessionCard sessions={sessions} />
           <div className="next-step">

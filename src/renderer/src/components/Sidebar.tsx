@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import type { AgentVerification, DetectedAgent, Folder, ProjectBundle } from '@shared/types'
 import { useToast } from './Toast'
 import { PHASE_COLOR } from '@/lib/phaseColors'
+import { SidebarIcon } from './Icons'
+import { ruleProvenance } from '@/lib/labels'
 import { timeAgo } from '@/lib/useLive'
 
 const PHASE_SHORT: Record<string, string> = {
@@ -56,7 +58,8 @@ export function Sidebar({
   openId,
   onSelect,
   connect,
-  onEgg
+  onEgg,
+  onToggleSide
 }: {
   projects: ProjectBundle[]
   agents: DetectedAgent[]
@@ -64,6 +67,7 @@ export function Sidebar({
   onSelect: (id: string | null) => void
   connect: (id: DetectedAgent['id']) => Promise<void>
   onEgg: () => void
+  onToggleSide: () => void
 }): React.JSX.Element {
   const toast = useToast()
   const [busy, setBusy] = useState<string | null>(null)
@@ -111,6 +115,9 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-drag" />
+      <button className="sidebar-hide" title="Hide the sidebar (⌘\\)" aria-label="Hide sidebar" onClick={onToggleSide}>
+        <SidebarIcon />
+      </button>
       <button className="sidebar-brand" onClick={() => onSelect(null)} onDoubleClick={onEgg}>
         <span className="brand-stamp">
           SpecDrive
@@ -170,6 +177,18 @@ export function Sidebar({
                   {timeAgo(b.project.updatedAt)}
                 </span>
                 <button
+                  className="side-export"
+                  aria-label={`Export ${b.project.name}`}
+                  title="Export as a web page (printable to PDF)"
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    const path = await window.specdrive.exportProject(b.project.id)
+                    if (path) toast('Project exported — open the file and print to PDF if you like')
+                  }}
+                >
+                  ↗
+                </button>
+                <button
                   className={`side-delete${confirming ? ' confirming' : ''}`}
                   aria-label={confirming ? `Really delete ${b.project.name}` : `Delete ${b.project.name}`}
                   onClick={async (e) => {
@@ -208,11 +227,17 @@ export function Sidebar({
                   {openRules === folder.id && folder.rules.length > 0 && (
                     <div className="side-folder-detail">
                       <p className="rule-intro">House rules — every project in this folder follows them:</p>
-                      {folder.rules.map((r) => (
-                        <p key={r.title} className="rule-line">
-                          • <strong>{r.title}</strong> — {r.content}
-                        </p>
-                      ))}
+                      {folder.rules.map((r) => {
+                        const prov = ruleProvenance(r)
+                        return (
+                          <p key={r.title} className="rule-line">
+                            • <strong>{r.title}</strong>
+                            {r.appliesTo && <span className="rule-scope"> only for {r.appliesTo}</span>} —{' '}
+                            {r.content}
+                            {prov && <span className="rule-provenance"> ({prov})</span>}
+                          </p>
+                        )
+                      })}
                     </div>
                   )}
                   {items.map(projectRow)}

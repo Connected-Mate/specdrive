@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import type { ProjectBundle, Spec } from '@shared/types'
 import { SpecDetail } from './SpecDetail'
-import { CATEGORY_LABEL, firstSentence } from '@/lib/labels'
+import { CATEGORY_LABEL, firstSentence, ruleProvenance } from '@/lib/labels'
 
 // "Keep in mind" — the standing memory of THIS project: the rules that always
 // apply, the papers the owner handed over, the decisions already taken, what
@@ -13,7 +13,7 @@ interface MemoGroup {
   title: string
   intro: string
   specs?: Spec[]
-  lines?: { title: string; body: string }[]
+  lines?: { title: string; body: string; scope?: string; meta?: string }[]
 }
 
 function isQuestion(s: Spec): boolean {
@@ -30,7 +30,12 @@ export function memoGroups(bundle: ProjectBundle): MemoGroup[] {
       key: 'rules',
       title: 'House rules',
       intro: `Always apply — they come from the folder “${folder.name}”.`,
-      lines: folder.rules.map((r) => ({ title: r.title, body: r.content }))
+      lines: folder.rules.map((r) => ({
+        title: r.title,
+        body: r.content,
+        scope: r.appliesTo,
+        meta: ruleProvenance(r)
+      }))
     })
   }
 
@@ -135,6 +140,50 @@ function DocRow({
   )
 }
 
+/** The one project-level toggle in this panel: whether SpecDrive writes the
+ *  generated, read-only AGENTS.md (plus a first-run CLAUDE.md stub) into the
+ *  project's own code folder, for tools that don't speak the MCP directly. */
+function AgentsMdToggle({
+  projectId,
+  codebasePath,
+  syncOn
+}: {
+  projectId: string
+  codebasePath: string
+  syncOn: boolean
+}): React.JSX.Element {
+  const [busy, setBusy] = useState(false)
+  const [localOn, setLocalOn] = useState(syncOn)
+  useEffect(() => setLocalOn(syncOn), [syncOn])
+  const shortPath = codebasePath.replace(/^\/Users\/[^/]+/, '~')
+  return (
+    <div className="agentsmd-toggle">
+      <label className="agentsmd-toggle-row">
+        <input
+          type="checkbox"
+          checked={localOn}
+          disabled={busy}
+          onChange={async (e) => {
+            const next = e.target.checked
+            setLocalOn(next)
+            setBusy(true)
+            try {
+              await window.specdrive.setSyncAgentsMd(projectId, next)
+            } finally {
+              setBusy(false)
+            }
+          }}
+        />
+        Write the house rules into the code folder (AGENTS.md)
+      </label>
+      <p className="agentsmd-toggle-path">
+        {localOn ? 'Kept up to date at ' : 'Off — nothing written to '}
+        <code>{shortPath}/AGENTS.md</code>
+      </p>
+    </div>
+  )
+}
+
 export function KeepInMind({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   const [openSpec, setOpenSpec] = useState<Spec | null>(null)
   const [openDoc, setOpenDoc] = useState<ProjectBundle['documents'][number] | null>(null)
@@ -195,19 +244,32 @@ export function KeepInMind({ bundle }: { bundle: ProjectBundle }): React.JSX.Ele
     )
   }
 
+  const codebasePath = bundle.project.codebasePath
+  const houseSync = codebasePath ? (
+    <AgentsMdToggle
+      projectId={projectId}
+      codebasePath={codebasePath}
+      syncOn={bundle.project.syncAgentsMd !== false}
+    />
+  ) : null
+
   if (!groups.length) {
     return (
-      <div className="empty">
-        <div className="art">Nothing to remember yet</div>
-        House rules, your documents, the decisions taken and the open questions
-        <br />
-        gather here — so the important things never get lost in the board.
+      <div className="memo">
+        {houseSync}
+        <div className="empty">
+          <div className="art">Nothing to remember yet</div>
+          House rules, your documents, the decisions taken and the open questions
+          <br />
+          gather here — so the important things never get lost in the board.
+        </div>
       </div>
     )
   }
 
   return (
     <div className="memo">
+      {houseSync}
       {groups.map((g) => (
         <section className="memo-group" key={g.key}>
           <div className="memo-head">
@@ -224,8 +286,12 @@ export function KeepInMind({ bundle }: { bundle: ProjectBundle }): React.JSX.Ele
             : null}
           {g.lines?.map((l, i) => (
             <div className={`memo-row static${g.key === 'questions' ? ' asking' : ''}`} key={`l${i}`}>
-              <span className="memo-row-title">{l.title}</span>
+              <span className="memo-row-title">
+                {l.title}
+                {l.scope && <span className="rule-scope"> only for {l.scope}</span>}
+              </span>
               {l.body && <span className="memo-row-body">{l.body}</span>}
+              {l.meta && <span className="memo-row-meta">{l.meta}</span>}
             </div>
           ))}
           {g.specs?.map((s) => (

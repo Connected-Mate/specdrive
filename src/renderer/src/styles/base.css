@@ -72,6 +72,73 @@ a {
 .shell.side-closed {
   grid-template-columns: 0 minmax(0, 1fr) 316px;
 }
+.shell.rail-closed {
+  grid-template-columns: 232px minmax(0, 1fr) 0;
+}
+.shell.side-closed.rail-closed {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+}
+.shell.rail-closed .rail > *:not(.rail-handle) {
+  opacity: 0;
+  pointer-events: none;
+}
+.shell.rail-closed .rail {
+  border-left: none;
+  overflow: visible;
+}
+.rail { position: relative; transition: opacity 0.25s ease; }
+.rail-handle {
+  position: absolute;
+  top: 50%;
+  left: -14px;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 46px;
+  border-radius: 50px;
+  background: var(--paper);
+  color: var(--smoke);
+  font-size: 17px;
+  line-height: 1;
+  box-shadow: 0 0 0 1px var(--hairline), 0 3px 10px rgba(0, 0, 0, 0.08);
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.2s ease;
+  z-index: 21;
+}
+.rail:hover .rail-handle, .shell.rail-closed .rail-handle { opacity: 1; }
+.shell.rail-closed .rail-handle { left: -30px; }
+.rail-handle:hover { color: var(--ink); }
+.sidebar-hide {
+  position: absolute;
+  top: 16px;
+  right: 10px;
+  width: 26px;
+  height: 22px;
+  border-radius: 7px;
+  color: var(--smoke);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.2s ease, background 0.2s ease;
+  z-index: 3;
+}
+.sidebar:hover .sidebar-hide { opacity: 1; }
+.sidebar-hide:hover { background: rgba(0, 0, 0, 0.06); color: var(--ink); }
+.side-export {
+  position: absolute;
+  right: 34px;
+  top: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50px;
+  font-size: 12px;
+  color: var(--smoke);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.18s ease, background 0.18s ease;
+}
+.side-item:hover .side-export { opacity: 1; }
+.side-export:hover { background: rgba(0, 0, 0, 0.06); color: var(--ink); }
 
 .shell.side-closed .sidebar {
   opacity: 0;
@@ -81,6 +148,7 @@ a {
 .sidebar {
   transition: opacity 0.25s ease;
   overflow: hidden;
+  position: relative;
 }
 
 /* Sidebar toggle — floats at the seam, moves with it */
@@ -109,9 +177,6 @@ a {
   left: 82px;
 }
 
-.shell.side-closed .content-head {
-  padding-left: 122px;
-}
 
 /* ============ Sidebar ============ */
 
@@ -249,6 +314,7 @@ body.is-fullscreen .rail-drag {
 }
 
 .side-item {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -379,6 +445,7 @@ body.is-fullscreen .rail-drag {
 
 .content-head {
   flex: none;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -518,6 +585,21 @@ body.is-fullscreen .rail-drag {
   font-size: 11px;
   color: var(--graphite);
   line-height: 1.45;
+}
+
+.rule-scope {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--smoke);
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 50px;
+  padding: 1px 6px;
+  margin-left: 4px;
+}
+
+.rule-provenance {
+  color: var(--smoke);
+  font-size: 10px;
 }
 
 /* One plain sentence explaining the open tab */
@@ -3979,6 +4061,31 @@ body.is-fullscreen .rail-drag {
   padding-top: 4px;
 }
 
+.agentsmd-toggle {
+  background: var(--paper);
+  border-radius: 16px;
+  box-shadow: var(--glow-ring-thin);
+  padding: 12px 15px;
+  margin-bottom: 16px;
+}
+
+.agentsmd-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.agentsmd-toggle-path {
+  margin: 5px 0 0 24px;
+  font-size: 11px;
+  color: var(--smoke);
+  line-height: 1.4;
+}
+
 .memo-lede {
   font-size: 12.5px;
   color: var(--smoke);
@@ -4043,6 +4150,14 @@ button.memo-row:hover {
   color: var(--ink);
   line-height: 1.3;
   padding-right: 90px;
+}
+
+.memo-row-meta {
+  display: block;
+  font-size: 10px;
+  color: var(--smoke);
+  line-height: 1.4;
+  margin-top: 3px;
 }
 
 .memo-row-body {

@@ -10,6 +10,7 @@ import { EasterEgg } from './components/scene/EasterEgg'
 import { SearchOverlay } from './components/SearchOverlay'
 
 const SIDE_KEY = 'specdrive-sidebar'
+const RAIL_KEY = 'specdrive-rail'
 const NARROW = 1080
 
 export default function App(): React.JSX.Element {
@@ -30,6 +31,21 @@ export default function App(): React.JSX.Element {
     return localStorage.getItem(SIDE_KEY) !== 'closed'
   })
 
+  const [railOpen, setRailOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(RAIL_KEY) !== 'closed'
+    } catch {
+      return true
+    }
+  })
+  const toggleRail = useCallback(() => {
+    setRailOpen((v) => {
+      try {
+        localStorage.setItem(RAIL_KEY, v ? 'closed' : 'open')
+      } catch {}
+      return !v
+    })
+  }, [])
   const toggleSide = useCallback(() => {
     setSideOpen((v) => {
       localStorage.setItem(SIDE_KEY, v ? 'closed' : 'open')
@@ -96,7 +112,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <ToastProvider>
-      <div className={`shell${sideOpen ? '' : ' side-closed'}`}>
+      <div className={`shell${sideOpen ? '' : ' side-closed'}${railOpen ? '' : ' rail-closed'}`}>
         <Sidebar
           projects={projects}
           agents={agents}
@@ -104,6 +120,7 @@ export default function App(): React.JSX.Element {
           onSelect={setOpenId}
           connect={connect}
           onEgg={() => setEggOn(true)}
+          onToggleSide={toggleSide}
         />
         {open ? (
           <Project key={open.project.id} bundle={open} />
@@ -117,7 +134,7 @@ export default function App(): React.JSX.Element {
             <Welcome />
           </main>
         )}
-        <GuideRail bundle={open ?? null} />
+        <GuideRail bundle={open ?? null} open={railOpen} onToggle={toggleRail} />
         {eggOn && <EasterEgg onClose={() => setEggOn(false)} />}
         {searchOn && (
           <SearchOverlay

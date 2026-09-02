@@ -1,4 +1,4 @@
-import type { Spec, SpecCategory } from '@shared/types'
+import type { FolderRule, Spec, SpecCategory } from '@shared/types'
 
 // Plain-words labels shared by the board, the memory panel and the detail view.
 
@@ -34,6 +34,22 @@ export function humanizeDuration(ms: number): string {
   const h = Math.floor(totalMin / 60)
   const m = totalMin % 60
   return m ? `${h}h ${m}min` : `${h}h`
+}
+
+/** "set by Claude Code · Sep 2 · owner approved ✓" — muted provenance line
+ *  under a house rule. Empty string when the rule predates provenance tracking. */
+export function ruleProvenance(r: FolderRule): string {
+  const bits: string[] = []
+  if (r.setBy) bits.push(`set by ${r.setBy === 'owner' ? 'the owner' : r.setBy.slice('agent:'.length)}`)
+  if (r.setAt) {
+    const d = new Date(r.setAt)
+    if (!Number.isNaN(d.getTime())) {
+      bits.push(d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+    }
+  }
+  if (r.setBy && r.setBy !== 'owner') bits.push(r.confirmedByOwner ? 'owner approved ✓' : 'awaiting owner approval')
+  if (r.supersedes) bits.push(`replaces "${r.supersedes}"`)
+  return bits.join(' · ')
 }
 
 /** Markdown body → the first plain sentence, for a collapsed card. */
