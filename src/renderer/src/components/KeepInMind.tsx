@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import type { ProjectBundle, Spec } from '@shared/types'
 import { SpecDetail } from './SpecDetail'
-import { CATEGORY_LABEL, firstSentence, ruleProvenance } from '@/lib/labels'
+import { AREA_STATUS_LABEL, CATEGORY_LABEL, areaLabel, firstSentence, ruleProvenance } from '@/lib/labels'
+import { effectiveRules } from '@shared/house-chain.mjs'
 
 // "Keep in mind" — the standing memory of THIS project: the rules that always
 // apply, the papers the owner handed over, the decisions already taken, what
@@ -13,7 +14,15 @@ interface MemoGroup {
   title: string
   intro: string
   specs?: Spec[]
-  lines?: { title: string; body: string; scope?: string; meta?: string }[]
+  lines?: {
+    title: string
+    body: string
+    scope?: string
+    meta?: string
+    status?: string
+    /** A rule a closer house replaced — kept visible, but stepped back */
+    replaced?: boolean
+  }[]
 }
 
 function isQuestion(s: Spec): boolean {
@@ -25,16 +34,63 @@ export function memoGroups(bundle: ProjectBundle): MemoGroup[] {
   const { specs, folder, project, planDoc } = bundle
   const groups: MemoGroup[] = []
 
-  if (folder?.rules?.length) {
+  // Houses nest, so the rules arrive as a chain: the outermost house first,
+  // this project's own house last. One block per house, so the owner can see
+  // where each rule comes from — and what a closer house replaced.
+  const chain = bundle.houseChain?.length ? bundle.houseChain : folder ? [folder] : []
+  if (chain.length) {
+    const all = effectiveRules(chain[chain.length - 1].id, (id) => chain.find((f) => f.id === id) ?? null)
+    chain.forEach((house, i) => {
+      const mine = all.filter((r) => r.houseId === house.id)
+      if (!mine.length) return
+      const path = chain.slice(0, i + 1).map((f) => f.name).join(' · ')
+      const own = i === chain.length - 1
+      groups.push({
+        key: `rules-${house.id}`,
+        title: chain.length === 1 ? 'House rules' : `House rules · from ${path}`,
+        intro: own
+          ? `Always apply — they come from the house “${house.name}”.`
+          : `Inherited: “${house.name}” is the house “${chain[i + 1].name}” lives in, so its rules apply here too.`,
+        lines: mine.map((r) => ({
+          title: r.title,
+          body: r.content,
+          scope: r.appliesTo,
+          meta: r.supersededBy
+            ? `replaced by the rule of the same name in “${r.supersededByHouse}”`
+            : ruleProvenance(r),
+          replaced: Boolean(r.supersededBy)
+        }))
+      })
+    })
+  }
+
+  // What this SHAPE of product must have an answer for — the checklist the
+  // agent derived itself. Empty areas are the holes the product would ship with.
+  // Recomputed here from the specs with the server's rule, so the owner sees
+  // the truth the moment a spec lands — not only after the agent's next read.
+  const areaSlug = (raw: string): string =>
+    raw.toLowerCase().trim().replace(/^area:/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  const areas = (project.requiredAreas ?? []).map((a) => {
+    if (a.status === 'n/a') return a
+    const matched = specs.filter((sp) =>
+      sp.tags.some((t) => t.toLowerCase().startsWith('area:') && areaSlug(t) === areaSlug(a.area))
+    )
+    const status = !matched.length ? 'empty' : matched.some((sp) => sp.confidence !== 'gap') ? 'covered' : 'partial'
+    return { ...a, status, specIds: matched.map((sp) => sp.id) } as typeof a
+  })
+  if (areas.length) {
+    const blank = areas.filter((a) => a.status === 'empty').length
     groups.push({
-      key: 'rules',
-      title: 'House rules',
-      intro: `Always apply — they come from the folder “${folder.name}”.`,
-      lines: folder.rules.map((r) => ({
-        title: r.title,
-        body: r.content,
-        scope: r.appliesTo,
-        meta: ruleProvenance(r)
+      key: 'areas',
+      title: 'What this product needs',
+      intro: blank
+        ? `${blank} of ${areas.length} still ${blank > 1 ? 'have' : 'has'} nothing on the board — the AI fills these itself before planning.`
+        : 'Every area this kind of product must answer has something on the board.',
+      lines: areas.map((a) => ({
+        title: a.label ?? areaLabel(a.area),
+        body: a.status === 'n/a' && a.note ? `Not needed — ${a.note}` : a.why,
+        meta: AREA_STATUS_LABEL[a.status],
+        status: a.status
       }))
     })
   }
@@ -285,8 +341,12 @@ export function KeepInMind({ bundle }: { bundle: ProjectBundle }): React.JSX.Ele
             ? bundle.documents.map((d) => <DocRow key={d.id} doc={d} onOpen={() => setOpenDoc(d)} />)
             : null}
           {g.lines?.map((l, i) => (
-            <div className={`memo-row static${g.key === 'questions' ? ' asking' : ''}`} key={`l${i}`}>
+            <div
+              className={`memo-row static${g.key === 'questions' ? ' asking' : ''}${l.replaced ? ' superseded' : ''}${l.status ? ` area-${l.status.replace('/', '')}` : ''}`}
+              key={`l${i}`}
+            >
               <span className="memo-row-title">
+                {l.status && <span className="area-dot" aria-hidden />}
                 {l.title}
                 {l.scope && <span className="rule-scope"> only for {l.scope}</span>}
               </span>

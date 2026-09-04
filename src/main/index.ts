@@ -1,4 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, clipboard, Menu } from 'electron'
+import fs from 'node:fs'
 import path from 'node:path'
 import chokidar from 'chokidar'
 import {
@@ -13,12 +14,29 @@ import {
   PROJECTS_DIR
 } from './store'
 import { detectAgents, connectAgent, verifyAgent, mcpServerPath, nodeBinPath } from './agents'
-import { exportProject } from './exporter'
-import { readImage, addImage, addComment, setSyncAgentsMd } from './store'
+import {
+  readImage,
+  addImage,
+  addComment,
+  setSyncAgentsMd,
+  applyAgentsMdDefault,
+  rerunChecks,
+  listWaiting,
+  listFolders,
+  createFolder,
+  updateFolder,
+  moveFolder,
+  setFolderRules,
+  deleteFolder,
+  assignProjectFolder,
+  FOLDERS_DIR
+} from './store'
+import { readSettings, writeSettings } from './settings'
 import { syncAllAgentsMd } from './agentsMd'
 import { initUpdater, checkForUpdatesInteractive } from './updater'
 import { checkForNotifications } from './notify'
-import type { AgentId, OwnerComment } from '../shared/types'
+import type { AgentId, AppSettings, FolderRule, OwnerComment } from '../shared/types'
+import type { PresetKey } from '../shared/folder-presets.mjs'
 
 const isDev = !app.isPackaged
 
@@ -200,10 +218,11 @@ app.whenReady().then(() => {
     setSyncAgentsMd(projectId, on)
     scheduleAgentsMdSync()
   })
-  ipcMain.handle('project:export', async (_e, id: string) => {
-    const bundle = loadBundle(id)
-    if (!bundle) return null
-    return exportProject(bundle)
+  ipcMain.handle('waiting:list', () => listWaiting())
+  ipcMain.handle('project:rerun-checks', (_e, id: string) => rerunChecks(id))
+  ipcMain.handle('project:reveal', (_e, id: string) => {
+    const dir = path.join(PROJECTS_DIR, path.basename(id))
+    if (fs.existsSync(dir)) shell.showItemInFolder(dir)
   })
   ipcMain.handle('agents:detect', () => detectAgents(serverPath))
   ipcMain.handle('agents:verify', (_e, id: AgentId) => verifyAgent(id))
@@ -212,13 +231,73 @@ app.whenReady().then(() => {
     const all = await detectAgents(serverPath)
     return all.find((a) => a.id === id)
   })
+  // House folders — the same writes the MCP server makes for an agent, done by
+  // the owner in the app. Every one of them returns a plain-words error string.
+  ipcMain.handle('folders:list', () => listFolders())
+  ipcMain.handle(
+    'folders:create',
+    (
+      _e,
+      name: string,
+      description: string,
+      rules: FolderRule[],
+      presets: string[],
+      parentId?: string | null
+    ) => createFolder(name, description, rules, presets as PresetKey[], parentId)
+  )
+  ipcMain.handle(
+    'folders:update',
+    (_e, id: string, patch: { name?: string; description?: string; parentId?: string | null }) => {
+      const err = updateFolder(id, patch)
+      // Moving a house changes which rules every project under it inherits.
+      if (!err && patch.parentId !== undefined) scheduleAgentsMdSync()
+      return err
+    }
+  )
+  ipcMain.handle('folders:move', (_e, id: string, parentId: string | null) => {
+    const err = moveFolder(id, parentId)
+    if (!err) scheduleAgentsMdSync()
+    return err
+  })
+  ipcMain.handle('folders:set-rules', (_e, id: string, rules: FolderRule[]) => {
+    const err = setFolderRules(id, rules)
+    if (!err) scheduleAgentsMdSync()
+    return err
+  })
+  ipcMain.handle('folders:delete', (_e, id: string) => {
+    const err = deleteFolder(id)
+    if (!err) scheduleAgentsMdSync()
+    return err
+  })
+  ipcMain.handle('project:assign-folder', (_e, projectId: string, folderId: string | null) => {
+    const err = assignProjectFolder(projectId, folderId)
+    if (!err) scheduleAgentsMdSync()
+    return err
+  })
+
+  ipcMain.handle('settings:get', () => readSettings())
+  ipcMain.handle('settings:set', (_e, patch: Partial<AppSettings>) => {
+    const next = writeSettings(patch)
+    scheduleAgentsMdSync()
+    return next
+  })
+  ipcMain.handle('app:about', async () => ({
+    version: app.getVersion(),
+    dataDir: DATA_DIR,
+    serverPath,
+    nodeBin: await nodeBinPath()
+  }))
+  ipcMain.handle('app:check-updates', () => checkForUpdatesInteractive())
+  ipcMain.handle('shell:reveal', (_e, what: 'data' | 'server') => {
+    shell.showItemInFolder(what === 'server' ? serverPath : DATA_DIR)
+  })
   ipcMain.handle('clipboard:copy', (_e, text: string) => clipboard.writeText(text))
   ipcMain.handle('shell:openExternal', (_e, url: string) => {
     if (url.startsWith('https://') || url.startsWith('http://')) shell.openExternal(url)
   })
 
   // Live updates: the MCP server writes files; we push a change signal to the UI.
-  const watcher = chokidar.watch([PROJECTS_DIR, path.join(DATA_DIR, 'sessions')], {
+  const watcher = chokidar.watch([PROJECTS_DIR, path.join(DATA_DIR, 'sessions'), FOLDERS_DIR], {
     ignoreInitial: true,
     ignored: (p) => /\.tmp$|\.lock$|\.bak$|\.DS_Store$|\.corrupt-/.test(p),
     awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 40 },
@@ -238,7 +317,12 @@ app.whenReady().then(() => {
   let agentsMdTimer: NodeJS.Timeout | null = null
   const scheduleAgentsMdSync = (): void => {
     if (agentsMdTimer) clearTimeout(agentsMdTimer)
-    agentsMdTimer = setTimeout(() => syncAllAgentsMd(listBundles()), 2000)
+    agentsMdTimer = setTimeout(() => {
+      // A project that has never been told either way inherits the owner's
+      // preference — once, explicitly, so its own toggle always tells the truth.
+      applyAgentsMdDefault(readSettings().agentsMdForNewProjects)
+      syncAllAgentsMd(listBundles())
+    }, 2000)
   }
   watcher.on('all', () => {
     notify()

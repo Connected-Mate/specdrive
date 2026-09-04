@@ -23,6 +23,9 @@ const LENS_LABEL: Record<string, string> = {
 }
 
 const KIND_LABEL: Record<string, string> = {
+  spike: 'Spike — prove it first',
+  design: 'Design',
+  chore: 'Housekeeping',
   test: 'Tests',
   security: 'Safety pass',
   review: 'Independent review',
@@ -84,8 +87,8 @@ function ScenariosTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element 
             ))}
           </div>
           {sc.gapNote && (
-            <div className="scenario-gap">
-              <strong>Gap:</strong> {sc.gapNote}
+            <div className={`scenario-gap${sc.status === 'walked' ? ' resolved' : ''}`}>
+              <strong>{sc.status === 'walked' ? 'Was a gap, now settled:' : 'Gap:'}</strong> {sc.gapNote}
             </div>
           )}
         </div>
@@ -115,6 +118,7 @@ function TaskRow({
   task,
   index,
   sub,
+  subLabel,
   childCount,
   doneChildren,
   collapsed,
@@ -126,6 +130,8 @@ function TaskRow({
   task: ProjectBundle['tasks'][number]
   index: number
   sub?: boolean
+  /** "3.2" — the sub-step's place in its block */
+  subLabel?: string
   childCount?: number
   doneChildren?: number
   collapsed?: boolean
@@ -160,6 +166,7 @@ function TaskRow({
       )}
       <div className="body">
         <div className="title-line">
+          {subLabel && <span className="sub-label">{subLabel}</span>}
           <span className="title">{task.title}</span>
           {duration && (
             <span className={`task-duration${task.status === 'in_progress' ? ' running' : ''}`}>
@@ -218,7 +225,31 @@ function TaskRow({
           </div>
         )}
         {task.status === 'done' && task.proofRunSkipped && (
-          <div className="stale-reason">No automatic check for this step — {task.proofRunSkipped}</div>
+          <div className="stale-reason">
+            No automatic check for this step —{' '}
+            {typeof task.proofRunSkipped === 'string' ? task.proofRunSkipped : task.proofRunSkipped.reason}
+          </div>
+        )}
+        {task.status === 'done' && (task.changedFiles || task.acceptanceResults || (!task.proofRun && !task.proofRunSkipped)) && (
+          <div className="evidence-row">
+            {!task.proofRun && !task.proofRunSkipped && (
+              <span className="evidence claim" title="No command ran and the board saw no file change — this step rests on the agent's word">
+                Written claim only
+              </span>
+            )}
+            {task.changedFiles && (
+              <span className="evidence" title={task.changedFiles.files.join('\n')}>
+                {task.changedFiles.total} file{task.changedFiles.total === 1 ? '' : 's'} changed
+              </span>
+            )}
+            {task.acceptanceResults?.map((a) => (
+              <span key={a.specId} className={`evidence acc-${a.result}`} title={`${a.title}\n${a.how}`}>
+                {a.result === 'pass' ? '✓' : a.result === 'fail' ? '✗' : '?'} {a.title}
+                {a.result === 'not_testable' ? ' — not testable' : ''}
+              </span>
+            ))}
+            {task.doneBy && <span className="evidence faded">by {task.doneBy.client}</span>}
+          </div>
         )}
         {isStaleDone && task.staleReason && <div className="stale-reason">{task.staleReason}</div>}
         <div className="task-badges">
@@ -248,10 +279,34 @@ function TaskRow({
 function BlueprintTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   if (!bundle.planDoc) {
     return (
-      <div className="empty">
-        <div className="art">No blueprint yet</div>
-        During the “Plan” step, your AI agent writes the blueprint here —<br />
-        what we are building, the decisions taken, the risks accepted, and your open questions.
+      <div className="plan-empty">
+        <span className="rail-mini-label">Nothing written yet</span>
+        <h2>Your plan gets written here</h2>
+        <p>
+          When you reach the “Plan” step, your AI agent writes this page for you — in plain words,
+          like an article you can read end to end.
+        </p>
+        <ul className="plan-empty-list">
+          <li>
+            <span className="k">Chapters</span>
+            What you are building, and how it holds together.
+          </li>
+          <li>
+            <span className="k">Decisions</span>
+            Every choice made, and the reason behind it.
+          </li>
+          <li>
+            <span className="k">Risks</span>
+            The parts we know are fragile, named out loud.
+          </li>
+          <li>
+            <span className="k">Questions</span>
+            The few things only you can answer.
+          </li>
+        </ul>
+        <p className="plan-empty-foot">
+          Copy the “Plan” prompt from the guide on the right to get it started.
+        </p>
       </div>
     )
   }
@@ -355,36 +410,52 @@ function PlanTab({
           )}
         </div>
       )}
-      {roots.map((t) => {
+      {roots.map((t, rootIdx) => {
         const kids = childrenOf(t.id)
         const isCollapsed = collapsed.has(t.id)
         const doneKids = kids.filter((k) => k.status === 'done').length
+        // A step with sub-steps is a BLOCK: it is finished only when its parts
+        // are, so it carries its own count and its parts sit inside it.
         return (
-          <React.Fragment key={t.id}>
-            <TaskRow
-              task={t}
-              index={row++}
-              childCount={kids.length || undefined}
-              doneChildren={doneKids}
-              collapsed={isCollapsed}
-              onToggle={() => toggle(t.id)}
-              waitsFor={waitsFor(t)}
-              projectId={bundle.project.id}
-              comments={bundle.comments}
-            />
-            {!isCollapsed &&
-              kids.map((k) => (
-                <TaskRow
-                  key={k.id}
-                  task={k}
-                  index={row++}
-                  sub
-                  waitsFor={waitsFor(k)}
-                  projectId={bundle.project.id}
-                  comments={bundle.comments}
-                />
-              ))}
-          </React.Fragment>
+          <div
+            className={`step-block${kids.length ? ' has-kids' : ''}${t.status === 'in_progress' ? ' running' : ''}${t.status === 'done' && !t.stale ? ' done' : ''}`}
+            key={t.id}
+          >
+            <div className="step-number" aria-hidden>
+              {rootIdx + 1}
+            </div>
+            <div className="step-block-body">
+              <TaskRow
+                task={t}
+                index={row++}
+                childCount={kids.length || undefined}
+                doneChildren={doneKids}
+                collapsed={isCollapsed}
+                onToggle={() => toggle(t.id)}
+                waitsFor={waitsFor(t)}
+                projectId={bundle.project.id}
+                comments={bundle.comments}
+              />
+              {kids.length > 0 && (
+                <div className="step-block-progress" aria-hidden>
+                  <span style={{ width: `${Math.round((doneKids / kids.length) * 100)}%` }} />
+                </div>
+              )}
+              {!isCollapsed &&
+                kids.map((k, ki) => (
+                  <TaskRow
+                    key={k.id}
+                    task={k}
+                    index={row++}
+                    sub
+                    subLabel={`${rootIdx + 1}.${ki + 1}`}
+                    waitsFor={waitsFor(k)}
+                    projectId={bundle.project.id}
+                    comments={bundle.comments}
+                  />
+                ))}
+            </div>
+          </div>
         )
       })}
       </div>
@@ -447,6 +518,16 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
     return map
   }, [bundle.wireframes, docs])
 
+  // A sheet over the map closes the way every sheet does.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+
   const thumbs = useMemo(() => {
     const map: Record<string, FlowThumb> = {}
     for (const wf of bundle.wireframes) {
@@ -461,7 +542,7 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   return (
     <>
       {bundle.flow && bundle.flow.screens.length > 0 && (
-        <>
+        <div className={`flowmap-pane${open ? ' with-open' : ''}`}>
           <FlowMap
             flow={bundle.flow}
             sketchScreens={sketchScreens}
@@ -472,12 +553,9 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
               )
               if (wf) setOpen(wf)
             }}
+            caption="The map of your product — each arrow is something the user does. Click a screen to see its sketch full size."
           />
-          <p className="flow-hint">
-            The map of your product — each arrow is something the user does. Click a screen to see
-            its sketch full size.
-          </p>
-        </>
+        </div>
       )}
       {!bundle.flow?.screens.length && (
         <div className="wireframe-grid">
@@ -517,7 +595,18 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
         </div>
       )}
       {open && (
-        <div className="wireframe-expanded">
+        <div
+          className="wireframe-overlay"
+          role="presentation"
+          onClick={() => setOpen(null)}
+        >
+        <div
+          className="wireframe-expanded"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${open.screen} — ${open.title}`}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="bar">
             <span className="t">
               {open.screen} — {open.title}
@@ -533,6 +622,7 @@ function SketchesTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
           ) : (
             <iframe sandbox="" title={open.title} src={dataUrl(open.id)} />
           )}
+        </div>
         </div>
       )}
     </>
@@ -616,7 +706,11 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
     { id: 'blueprint', label: 'The plan', count: bundle.planDoc ? 1 : 0 }
   ]
   const buildTabs: { id: Tab; label: string; count: number }[] = [
-    { id: 'plan', label: 'Build steps', count: tasks.length },
+    { id: 'plan', label: 'Build steps', count: tasks.length }
+  ]
+  // The diary and the memory sit apart on the right: neither is a mode of
+  // work, both are things you glance at.
+  const asideTabs: { id: Tab; label: string; count: number }[] = [
     { id: 'activity', label: 'Activity', count: activity.length }
   ]
 
@@ -662,6 +756,7 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
         }
         agents={crew}
         spotlight={spotlight}
+        awake={specs.length === 0}
       />
       <div className="tab-bar" role="tablist" aria-label="Project sections">
         <div
@@ -687,6 +782,7 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
         </div>
         <div className="tab-cluster keep">
           <div className="tabs">
+            {asideTabs.map(renderTab)}
             <button
               role="tab"
               aria-selected={tab === 'memory'}

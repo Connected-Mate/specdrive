@@ -2,7 +2,7 @@ import React, { useEffect } from 'react'
 import { CursorScene } from './CursorScene'
 
 // Hidden treat: double-click the stamped logo and the crew takes over the
-// window for a moment — dusk sky, the robot, cursors saluting.
+// window for a moment — dusk sky and the cursors saluting.
 
 const EGG_CHIPS = [
   'Hello, human ✦',
@@ -30,7 +30,6 @@ export function EasterEgg({ onClose }: { onClose: () => void }): React.JSX.Eleme
 
   return (
     <div className="egg-overlay" onClick={onClose} role="presentation">
-      <img className="egg-robot" src="images/robot-dusk.png" alt="" />
       <CursorScene word="You found the crew" chips={EGG_CHIPS} />
       <span className="egg-hint">click anywhere to get back to work</span>
     </div>

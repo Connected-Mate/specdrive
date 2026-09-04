@@ -2,8 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectBundle, Spec, SpecCategory } from '@shared/types'
 import { SPEC_CATEGORIES } from '@shared/types'
 import { Markdown } from '@/lib/markdown'
-import { CATEGORY_LABEL, STATUS_LABEL, TAG_LABEL, firstSentence } from '@/lib/labels'
-import { CursorScene } from '@/components/scene/CursorScene'
+import { CATEGORY_COLOR, CATEGORY_LABEL, STATUS_LABEL, TAG_LABEL, firstSentence } from '@/lib/labels'
 import { SpecDetail } from '@/components/SpecDetail'
 import { OwnerNotes } from '@/components/OwnerNotes'
 import { useToast } from '@/components/Toast'
@@ -273,16 +272,39 @@ export function BoardDoc({
     sectionRefs.current.get(cat)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  // Scroll-spy: the section whose head is nearest the top lights up in the
+  // table of contents, so the owner always knows where they are on the board.
+  const [activeCat, setActiveCat] = useState<SpecCategory | null>(null)
+  useEffect(() => {
+    const els = [...sectionRefs.current.entries()]
+    if (!els.length) return
+    const scroller = els[0][1].closest('.content-body')
+    const update = (): void => {
+      const top = scroller ? scroller.getBoundingClientRect().top : 0
+      let best: SpecCategory | null = null
+      let bestDist = Infinity
+      for (const [cat, el] of els) {
+        const d = el.getBoundingClientRect().top - top
+        const dist = d <= 40 ? -d : d * 4 // prefer the last head already passed
+        if (dist < bestDist) {
+          bestDist = dist
+          best = cat
+        }
+      }
+      setActiveCat((c) => (c === best ? c : best))
+    }
+    update()
+    scroller?.addEventListener('scroll', update, { passive: true })
+    return () => scroller?.removeEventListener('scroll', update)
+  }, [specs.length, query, filter])
+
   if (!specs.length) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, height: '100%' }}>
-        <CursorScene word={projectName} compact />
-        <p className="empty" style={{ padding: '8px 24px' }}>
-          The board is listening — as you talk with your AI agent,
-          <br />
-          everything it learns lands here, live.
-        </p>
-      </div>
+      <p className="empty board-listening">
+        The board is listening — as you talk with your AI agent,
+        <br />
+        everything it learns lands here, live.
+      </p>
     )
   }
 
@@ -348,21 +370,35 @@ export function BoardDoc({
   return (
     <div className="board-doc" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
       <nav className="board-toc" aria-label="Sections of the board">
-        <span className="rail-mini-label">On this board</span>
-        <ol>
-          {[...groups.entries()].map(([cat, items]) => (
-            <li key={cat}>
-              <button onClick={() => jumpTo(cat)}>
-                <span className="toc-name">{CATEGORY_LABEL[cat]}</span>
-                <span className="toc-n">{items.length}</span>
-              </button>
-            </li>
-          ))}
-        </ol>
-        {!groups.size && <p className="toc-empty">Nothing matches.</p>}
-        <button className="toc-fold" onClick={() => setAll(!folded)}>
-          {folded ? 'Open every card' : 'Fold every card'}
-        </button>
+        <div className="toc-card">
+          <div className="toc-head">
+            <span className="rail-mini-label">On this board</span>
+            <span className="toc-total">
+              {counts.all} card{counts.all === 1 ? '' : 's'}
+              {counts.confirmed > 0 && ` · ${counts.confirmed} confirmed`}
+            </span>
+          </div>
+          <ol>
+            {[...groups.entries()].map(([cat, items]) => (
+              <li key={cat}>
+                <button
+                  className={activeCat === cat ? 'on' : ''}
+                  aria-current={activeCat === cat ? 'true' : undefined}
+                  style={{ '--cat': CATEGORY_COLOR[cat] } as React.CSSProperties}
+                  onClick={() => jumpTo(cat)}
+                >
+                  <span className="toc-dot" />
+                  <span className="toc-name">{CATEGORY_LABEL[cat]}</span>
+                  <span className="toc-n">{items.length}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+          {!groups.size && <p className="toc-empty">Nothing matches.</p>}
+          <button className="toc-fold" onClick={() => setAll(!folded)}>
+            {folded ? 'Open every card' : 'Fold every card'}
+          </button>
+        </div>
       </nav>
 
       <div className="board-main">
@@ -412,7 +448,8 @@ export function BoardDoc({
               if (el) sectionRefs.current.set(cat, el)
             }}
           >
-            <div className="board-section-head">
+            <div className="board-section-head" style={{ '--cat': CATEGORY_COLOR[cat] } as React.CSSProperties}>
+              <span className="dot" />
               <span className="label">{CATEGORY_LABEL[cat]}</span>
               <span className="rule" />
               <span className="n">{items.length}</span>

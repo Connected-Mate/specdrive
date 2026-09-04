@@ -4,6 +4,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Folder, FolderRule, Phase, ProjectBundle, Spec } from '../shared/types'
+// Houses nest: a project inherits every house above it, closest house winning
+// on a shared rule name. One shared module decides that, everywhere.
+import { effectiveRules } from '../shared/house-chain.mjs'
+import type { EffectiveRule } from '../shared/house-chain.mjs'
 
 const PHASE_LABEL: Record<Phase, string> = {
   capture: 'Capturing the idea',
@@ -19,33 +23,55 @@ function isQuestion(s: Spec): boolean {
   return /^question\b/i.test(s.title.trim())
 }
 
-function ruleLine(r: FolderRule, opts: { overriddenBy?: string } = {}): string {
+function ruleLine(r: FolderRule, opts: { overriddenBy?: string; replacedByHouse?: string } = {}): string {
   const bits: string[] = []
   if (r.appliesTo) bits.push(`only for \`${r.appliesTo}\``)
   if (r.setBy) bits.push(`set by ${r.setBy === 'owner' ? 'the owner' : r.setBy.slice('agent:'.length)}`)
   if (r.confirmedByOwner) bits.push('owner approved')
+  if (opts.replacedByHouse) bits.push(`replaced by the rule of the same name in "${opts.replacedByHouse}"`)
   if (opts.overriddenBy) bits.push(`overridden by project rule "${opts.overriddenBy}"`)
   const meta = bits.length ? ` (${bits.join(' · ')})` : ''
   return `- **${r.title}**${meta}: ${r.content}`
 }
 
-/** Standing rules: folder rules first, then confirmed project-level decisions.
- *  A project decision whose title matches a folder rule's title overrides it —
- *  the folder rule is still listed, but marked overridden, never dropped silently. */
-function standingRulesSection(folder: Folder | null | undefined, specs: Spec[]): string {
+/** Standing rules: the whole line of houses above the project first — the
+ *  outermost house at the top, the project's own house last — then confirmed
+ *  project-level decisions. A rule overridden by a closer house, or by a
+ *  project decision of the same title, is still listed and marked as replaced,
+ *  never dropped silently. */
+function standingRulesSection(bundle: ProjectBundle): string {
+  const { specs } = bundle
   const decisions = specs.filter((s) => s.category === 'decisions' && s.status === 'confirmed' && !isQuestion(s))
   const decisionTitles = new Map(decisions.map((d) => [d.title.trim().toLowerCase(), d.title]))
-  const folderRules = folder?.rules ?? []
+  const chain: Folder[] =
+    bundle.houseChain && bundle.houseChain.length
+      ? bundle.houseChain
+      : bundle.folder
+        ? [bundle.folder]
+        : []
+  const rules: EffectiveRule[] = chain.length
+    ? effectiveRules(chain[chain.length - 1].id, (id) => chain.find((f) => f.id === id) ?? null)
+    : []
   const lines: string[] = []
-  if (folderRules.length) {
-    lines.push(`From the folder "${folder!.name}":`)
-    for (const r of folderRules) {
-      const overriddenBy = decisionTitles.get(r.title.trim().toLowerCase())
-      lines.push(ruleLine(r, { overriddenBy }))
+  for (const [i, house] of chain.entries()) {
+    const mine = rules.filter((r) => r.houseId === house.id)
+    if (!mine.length) continue
+    const address = chain.slice(0, i + 1).map((f) => f.name).join(' · ')
+    const own = i === chain.length - 1
+    lines.push(
+      `${lines.length ? '\n' : ''}From the house "${address}"${own ? '' : ' (inherited)'}:`
+    )
+    for (const r of mine) {
+      lines.push(
+        ruleLine(r, {
+          overriddenBy: r.supersededBy ? undefined : decisionTitles.get(r.title.trim().toLowerCase()),
+          replacedByHouse: r.supersededBy ? r.supersededByHouse : undefined
+        })
+      )
     }
   }
   if (decisions.length) {
-    lines.push(folderRules.length ? '\nFrom this project (overrides the folder on the same topic):' : 'From this project:')
+    lines.push(lines.length ? '\nFrom this project (overrides the houses on the same topic):' : 'From this project:')
     for (const d of decisions) {
       lines.push(`- **${d.title}**: ${d.content.trim().split('\n')[0]}`)
     }
@@ -92,7 +118,7 @@ ${project.oneLiner || 'A product being built with SpecDrive.'}
 This file is a generated, read-only mirror of the SpecDrive board for tools that don't speak its MCP — the board itself is the source of truth.
 
 ## Standing rules
-${standingRulesSection(bundle.folder, bundle.specs)}
+${standingRulesSection(bundle)}
 
 ## Current state
 ${currentStateSection(bundle)}

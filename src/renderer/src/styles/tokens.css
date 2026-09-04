@@ -66,4 +66,9 @@
   /* Layout */
   --page-max: 1200px;
   --reading-max: 720px;
+  /* The strip that carries both pane toggles, above the working column */
+  --top-strip: 40px;
+  /* How wide a working column is allowed to grow before it stops following
+     the window — wide enough to fill a laptop, narrow enough to stay read. */
+  --work-max: 1280px;
 }

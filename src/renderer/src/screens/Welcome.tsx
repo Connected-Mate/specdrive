@@ -1,10 +1,13 @@
 import React from 'react'
 import { CursorScene } from '@/components/scene/CursorScene'
+import { WaitingOnYou } from '@/components/WaitingOnYou'
 
-/** Main pane when no project is selected — the multiplayer moment, no scroll. */
-export function Welcome(): React.JSX.Element {
+/** Main pane when no project is selected — the multiplayer moment, and the
+ *  short list of things only the owner can settle. */
+export function Welcome({ onOpenProject }: { onOpenProject: (id: string) => void }): React.JSX.Element {
   return (
     <div className="welcome">
+      <WaitingOnYou onOpenProject={onOpenProject} />
       <CursorScene word="SpecDrive" />
       <div className="welcome-steps">
         <div className="wstep">

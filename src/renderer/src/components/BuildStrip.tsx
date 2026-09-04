@@ -1,6 +1,7 @@
-import React from 'react'
+import React, { useState } from 'react'
 import type { ProjectBundle, Task } from '@shared/types'
 import { humanizeDuration } from '@/lib/labels'
+import { useToast } from './Toast'
 
 // "Where we are" — the first thing to read on the build side. Plain counts,
 // the step running right now, and the one that comes next. No percentages:
@@ -22,6 +23,11 @@ export function BuildStrip({
   onOpenPlan: () => void
 }): React.JSX.Element {
   const { tasks } = bundle
+  const toast = useToast()
+  const [checking, setChecking] = useState(false)
+  const [verdict, setVerdict] = useState<{ ok: boolean; message: string } | null>(null)
+  const provable = tasks.filter((t) => t.status === 'done' && t.verifyCommand).length
+  const claimed = tasks.filter((t) => t.status === 'done' && !t.verifyCommand).length
   const done = tasks.filter((t) => t.status === 'done' && !t.stale).length
   const todo = tasks.filter((t) => t.status === 'todo' || t.status === 'blocked').length
   const recheck = tasks.filter((t) => t.status === 'done' && t.stale).length
@@ -56,7 +62,40 @@ export function BuildStrip({
         <button className="build-plan-link" onClick={onOpenPlan}>
           Open the plan
         </button>
+        <button
+          className="build-recheck"
+          disabled={checking}
+          title={
+            provable
+              ? `Run the ${provable} check${provable === 1 ? '' : 's'} again, right now, yourself`
+              : 'No finished step carries a check SpecDrive can run'
+          }
+          onClick={async () => {
+            setChecking(true)
+            setVerdict(null)
+            try {
+              const r = await window.specdrive.rerunChecks(bundle.project.id)
+              setVerdict({ ok: r.ok, message: r.message })
+              toast(r.message)
+            } catch {
+              setVerdict({ ok: false, message: 'The checks could not run just now.' })
+            } finally {
+              setChecking(false)
+            }
+          }}
+        >
+          {checking ? 'Checking…' : 'Check it for real'}
+        </button>
       </div>
+      {verdict && (
+        <p className={`build-verdict${verdict.ok ? ' ok' : ' bad'}`}>{verdict.message}</p>
+      )}
+      {!verdict && claimed > 0 && (
+        <p className="build-verdict faded">
+          {claimed} finished step{claimed === 1 ? '' : 's'} rest{claimed === 1 ? 's' : ''} on your agent’s word — no check
+          SpecDrive can run. Ask it to give those steps a check command.
+        </p>
+      )}
       <div className="build-now">
         {running ? (
           <p className="build-line running">

@@ -17,6 +17,7 @@ const CATEGORY_LABEL: Record<SpecCategory, string> = {
   data: 'Data',
   research: 'Research',
   risks: 'Hard parts',
+  business: 'Business & money',
   decisions: 'Decisions'
 }
 

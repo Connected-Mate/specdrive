@@ -5,6 +5,7 @@
 import { BrowserWindow, Notification } from 'electron'
 import type { OwnerComment, ProjectBundle, Task } from '../shared/types'
 import { listBundles } from './store'
+import { readSettings } from './settings'
 
 interface Snapshot {
   phase: string
@@ -30,6 +31,9 @@ function anyWindowFocused(): boolean {
 
 function fire(title: string, body: string): void {
   if (!Notification.isSupported()) return
+  // The owner can turn these off in Settings — checked at fire time, so the
+  // switch takes effect on the very next milestone with no restart.
+  if (!readSettings().notifications) return
   if (anyWindowFocused()) return
   const now = Date.now()
   if (now - lastFiredAt < THROTTLE_MS) return

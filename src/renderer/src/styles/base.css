@@ -64,6 +64,8 @@ a {
 .shell {
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr) 316px;
+  /* Row 1 is the pane strip over the working column; the side panes span both. */
+  grid-template-rows: var(--top-strip) minmax(0, 1fr);
   height: 100vh;
   transition: grid-template-columns 0.35s var(--ease-spring);
   position: relative;
@@ -78,35 +80,29 @@ a {
 .shell.side-closed.rail-closed {
   grid-template-columns: 0 minmax(0, 1fr) 0;
 }
-.shell.rail-closed .rail > *:not(.rail-handle) {
+
+/* Wide screens and fullscreen: the working column keeps following the window
+   instead of stranding half of it. Prose inside keeps its own measure. */
+@media (min-width: 1800px) {
+  .shell {
+    --work-max: 1560px;
+  }
+}
+
+@media (min-width: 2240px) {
+  .shell {
+    --work-max: 1880px;
+  }
+}
+.shell.rail-closed .rail > * {
   opacity: 0;
   pointer-events: none;
 }
 .shell.rail-closed .rail {
   border-left: none;
-  overflow: visible;
+  overflow: hidden;
 }
 .rail { position: relative; transition: opacity 0.25s ease; }
-.rail-handle {
-  position: absolute;
-  top: 50%;
-  left: -14px;
-  transform: translateY(-50%);
-  width: 26px;
-  height: 46px;
-  border-radius: 50px;
-  background: var(--paper);
-  color: var(--smoke);
-  font-size: 17px;
-  line-height: 1;
-  box-shadow: 0 0 0 1px var(--hairline), 0 3px 10px rgba(0, 0, 0, 0.08);
-  opacity: 0;
-  transition: opacity 0.2s ease, color 0.2s ease;
-  z-index: 21;
-}
-.rail:hover .rail-handle, .shell.rail-closed .rail-handle { opacity: 1; }
-.shell.rail-closed .rail-handle { left: -30px; }
-.rail-handle:hover { color: var(--ink); }
 .sidebar-hide {
   position: absolute;
   top: 16px;
@@ -151,12 +147,38 @@ a {
   position: relative;
 }
 
-/* Sidebar toggle — floats at the seam, moves with it */
-.side-toggle {
-  position: absolute;
-  top: 15px;
-  left: 244px;
-  z-index: 20;
+/* ============ Pane strip — one vocabulary for both sides ============ */
+
+/* A slim, draggable strip over the working column. Its two ends carry the
+   same button: left closes the sidebar, right closes the guide. */
+.content-top {
+  grid-column: 2;
+  grid-row: 1;
+  /* The dawn gradient of the pane starts up here: strip and pane are one
+     surface, no seam between them. */
+  background: linear-gradient(180deg, rgba(123, 126, 216, 0.09) 0%, rgba(123, 126, 216, 0.07) 100%), var(--ash);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 12px;
+  -webkit-app-region: drag;
+  position: relative;
+  z-index: 2;
+  transition: padding-left 0.35s var(--ease-spring);
+}
+
+/* Sidebar closed: the working column starts at the window edge, so the strip
+   steps aside for the macOS traffic lights. Fullscreen has none. */
+.shell.side-closed .content-top {
+  padding-left: 84px;
+}
+
+body.is-fullscreen .shell.side-closed .content-top {
+  padding-left: 12px;
+}
+
+.pane-toggle {
+  -webkit-app-region: no-drag;
   width: 28px;
   height: 24px;
   display: inline-flex;
@@ -164,17 +186,38 @@ a {
   justify-content: center;
   border-radius: 8px;
   color: var(--smoke);
-  transition: left 0.35s var(--ease-spring), background 0.15s ease, color 0.15s ease;
-  -webkit-app-region: no-drag;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.side-toggle:hover {
+/* The pane is open — the button reads as "this side is showing". */
+.pane-toggle.on {
+  color: var(--ink);
+}
+
+.pane-toggle:hover {
   background: rgba(0, 0, 0, 0.06);
   color: var(--ink);
 }
 
-.shell.side-closed .side-toggle {
-  left: 82px;
+.pane-toggle:focus-visible {
+  outline: 2px solid var(--signal-blue);
+  outline-offset: 2px;
+}
+
+/* The side panes run the full height, beside the strip */
+.shell > .sidebar {
+  grid-column: 1;
+  grid-row: 1 / -1;
+}
+
+.shell > .rail {
+  grid-column: 3;
+  grid-row: 1 / -1;
+}
+
+.shell > .content {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 
@@ -198,8 +241,7 @@ a {
 }
 
 /* Fullscreen hides the traffic lights — drop the space reserved for them */
-body.is-fullscreen .sidebar-drag,
-body.is-fullscreen .rail-drag {
+body.is-fullscreen .sidebar-drag {
   height: 18px;
 }
 
@@ -450,7 +492,7 @@ body.is-fullscreen .rail-drag {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 24px 12px 58px;
+  padding: 6px 24px 12px;
   -webkit-app-region: drag;
   position: relative;
   z-index: 1;
@@ -645,8 +687,8 @@ body.is-fullscreen .rail-drag {
 }
 
 .rail-drag {
-  /* No traffic lights on the right side — a slim grab strip is enough. */
-  height: 26px;
+  /* Lines the rail body up with the working pane, under the strip. */
+  height: 12px;
   -webkit-app-region: drag;
   flex: none;
   transition: height 0.25s ease;
@@ -1192,9 +1234,27 @@ body.is-fullscreen .rail-drag {
   z-index: 1;
 }
 
+/* Empty board: the band grows and the spec chips float in around the name —
+   the waiting room lives up here, nothing is drawn twice below. */
+.cursor-scene.header.awake {
+  height: 250px;
+  transition: height 0.45s var(--ease-spring);
+}
+
+.cursor-scene.header.awake .frosted-word {
+  font-size: clamp(30px, 4vw, 50px);
+}
+
+.board-listening {
+  padding: 26px 24px 8px;
+}
+
 @media (max-height: 780px) {
   .cursor-scene.header {
     height: 108px;
+  }
+  .cursor-scene.header.awake {
+    height: 200px;
   }
 }
 
@@ -1491,6 +1551,8 @@ body.is-fullscreen .rail-drag {
   color: var(--graphite);
   line-height: 1.5;
   overflow-wrap: break-word;
+  /* The card follows the window; the prose inside keeps a readable measure. */
+  max-width: 86ch;
 }
 
 .spec-card .content-md p + p {
@@ -1685,7 +1747,7 @@ body.is-fullscreen .rail-drag {
   border-radius: var(--radius-card);
   box-shadow: var(--glow-ring-thin);
   padding: 18px 20px 6px;
-  max-width: 760px;
+  max-width: min(100%, var(--work-max));
 }
 
 .progress-row {
@@ -1836,6 +1898,12 @@ body.is-fullscreen .rail-drag {
   gap: 8px;
 }
 
+/* On a wide row the title takes the space and its meta pins to the far end */
+.task-row .title-line > .title {
+  flex: 1;
+  min-width: 0;
+}
+
 .task-chevron {
   display: inline-flex;
   align-items: center;
@@ -1866,6 +1934,7 @@ body.is-fullscreen .rail-drag {
   color: var(--smoke);
   line-height: 1.45;
   margin-top: 2px;
+  max-width: 110ch;
 }
 
 .task-row .note {
@@ -1942,16 +2011,79 @@ body.is-fullscreen .rail-drag {
 
 /* ============ Flow map ============ */
 
+/* The whiteboard: it takes the whole pane, the map hangs from the top. */
+.flowmap-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 340px;
+}
+
+/* A sketch is open below the map — the board gives the room back. */
+.flowmap-pane.with-open {
+  height: auto;
+}
+
 .flowmap-card {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background:
     radial-gradient(rgba(0, 0, 0, 0.045) 1px, transparent 1px) 0 0 / 22px 22px,
     var(--paper);
   border-radius: var(--radius-card);
   box-shadow: var(--glow-ring-thin);
-  margin-bottom: 16px;
-  padding: 4px;
-  overflow-x: auto;
+  overflow: hidden;
   animation: pane-in 0.45s var(--ease-spring) both;
+}
+
+/* A breath of dusk along the top edge of the board — atmosphere, not colour. */
+.flowmap-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 140px;
+  background: linear-gradient(
+    180deg,
+    rgba(74, 127, 242, 0.06) 0%,
+    rgba(123, 126, 216, 0.03) 45%,
+    rgba(123, 126, 216, 0) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Scrolls only when the map is genuinely bigger than the board. */
+.flowmap-scroll {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px;
+  align-content: start;
+}
+
+/* The one line of explanation, laid over the board's bottom-left corner. */
+.flowmap-caption {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  z-index: 2;
+  max-width: min(560px, calc(100% - 28px));
+  margin: 0;
+  padding: 6px 13px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 0 0 1px var(--hairline);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--smoke);
+  pointer-events: none;
 }
 
 /* Opacity only — a transform animation would clobber the SVG translate attribute */
@@ -2038,11 +2170,7 @@ body.is-fullscreen .rail-drag {
   fill: var(--smoke);
 }
 
-.flow-hint {
-  font-size: 11px;
-  color: var(--smoke);
-  margin: -12px 4px 16px;
-}
+
 
 /* ============ Sketches ============ */
 
@@ -2112,13 +2240,37 @@ body.is-fullscreen .rail-drag {
   margin-top: 1px;
 }
 
+.wireframe-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  background: rgba(10, 10, 10, 0.3);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5vh 4vw;
+  animation: egg-in 0.2s ease both;
+}
+
 .wireframe-expanded {
-  margin-top: 16px;
+  width: min(1100px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
   background: var(--paper);
-  border-radius: var(--radius-card);
-  box-shadow: var(--glow-ring);
+  border-radius: var(--radius-card-lg);
+  box-shadow: var(--glow-ring), 0 30px 80px rgba(12, 38, 77, 0.28);
   overflow: hidden;
-  animation: pane-in 0.4s var(--ease-spring) both;
+  animation: rise-in 0.3s var(--ease-spring) both;
+}
+
+.wireframe-expanded .kit-expanded,
+.wireframe-expanded > iframe {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .wireframe-expanded .bar {
@@ -2145,7 +2297,7 @@ body.is-fullscreen .rail-drag {
 /* ============ Activity ============ */
 
 .activity {
-  max-width: 640px;
+  max-width: min(100%, 900px);
   padding-top: 6px;
 }
 
@@ -2240,28 +2392,6 @@ body.is-fullscreen .rail-drag {
 
 .egg-overlay .spec-chip {
   background: rgba(255, 255, 255, 0.92);
-}
-
-.egg-robot {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  height: 82%;
-  object-fit: contain;
-  object-position: bottom right;
-  animation: egg-robot-in 0.9s var(--ease-spring) 0.2s both;
-  pointer-events: none;
-}
-
-@keyframes egg-robot-in {
-  from {
-    opacity: 0;
-    transform: translateY(60px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 .egg-hint {
@@ -2423,12 +2553,12 @@ body.is-fullscreen .rail-drag {
   }
 }
 
-/* Sidebar toggle mirrors when closed */
-.side-toggle svg {
+/* Each toggle's glyph flips when its own pane is closed */
+.pane-toggle svg {
   transition: transform 0.3s var(--ease-spring);
 }
 
-.shell.side-closed .side-toggle svg {
+.pane-toggle:not(.on) svg {
   transform: scaleX(-1);
 }
 
@@ -2566,15 +2696,111 @@ body.is-fullscreen .rail-drag {
 
 /* ============ Plan document (agent-native style) ============ */
 
+/* A magazine spread: chapters left, the narrative in the middle at a
+   readable measure, decisions and questions pinned in the margin. */
+.plandoc-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 30px;
+  align-items: start;
+  /* Three columns already fill a wide pane — no need to chase the window;
+     past that the spread centres itself instead of hugging the left edge. */
+  max-width: min(100%, 1560px);
+  margin-inline: auto;
+  padding-top: 2px;
+}
+
+.plandoc-layout.has-toc {
+  grid-template-columns: 196px minmax(0, 1fr);
+}
+
+.plandoc-layout.wide {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+.plandoc-layout.has-toc.wide {
+  grid-template-columns: 196px minmax(0, 1fr) 320px;
+}
+
+.plandoc-toc {
+  position: sticky;
+  top: -8px;
+  padding: 8px 0 12px;
+}
+
+.plandoc-toc ol {
+  list-style: none;
+  margin: 4px 0 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.plandoc-toc li button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 10px;
+  color: var(--smoke);
+  font-size: 12px;
+  line-height: 1.35;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.plandoc-toc li button:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--ink);
+}
+
+.plandoc-toc li button.on {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.plandoc-toc .toc-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.18);
+  flex: none;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.plandoc-toc li button.on .toc-dot {
+  background: var(--signal-blue);
+  transform: scale(1.4);
+}
+
+.plandoc-toc .toc-name {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/* The margin column — everything that asks something of the owner */
+.plandoc-margin {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 2px;
+}
+
 .plandoc {
-  max-width: 760px;
+  min-width: 0;
   margin-bottom: 26px;
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
 
-.plandoc > * {
+/* Chapters breathe — an editorial rhythm, not a stack of boxes */
+.plandoc .plandoc-section + .plandoc-section {
+  margin-top: 16px;
+}
+
+.plandoc > *,
+.plandoc-margin > * {
   animation: spec-in 0.5s var(--ease-spring) both;
   animation-delay: calc(var(--i, 0) * 70ms);
 }
@@ -2582,17 +2808,26 @@ body.is-fullscreen .rail-drag {
 .plandoc-section h3 {
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: 24px;
+  font-size: 27px;
   color: var(--ink);
-  line-height: 1.05;
-  margin-bottom: 8px;
+  line-height: 1.04;
+  margin-bottom: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.plandoc .plandoc-section:first-child h3 {
+  padding-top: 0;
+  border-top: none;
 }
 
 .plandoc-body {
-  font-size: 13px;
+  font-size: 13.5px;
   color: var(--graphite);
-  line-height: 1.55;
+  line-height: 1.62;
   user-select: text;
+  /* The column follows the window; the prose keeps a reading measure. */
+  max-width: 72ch;
 }
 
 .plandoc-body p + p {
@@ -2606,9 +2841,25 @@ body.is-fullscreen .rail-drag {
 }
 
 .plandoc-callout {
+  position: relative;
   border-radius: var(--radius-card);
-  padding: 16px 18px 14px;
+  padding: 16px 18px 14px 20px;
   user-select: text;
+  overflow: hidden;
+}
+
+/* One hairline of the tone's own colour — the only chroma a callout gets */
+.plandoc-callout::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--tone-color, var(--signal-blue));
+  opacity: 0.55;
+}
+
+.plandoc-callout .plandoc-body {
+  max-width: 62ch;
 }
 
 .plandoc-callout .tone-badge {
@@ -2621,6 +2872,7 @@ body.is-fullscreen .rail-drag {
 }
 
 .plandoc-callout.tone-decision {
+  --tone-color: #007aff;
   background: rgba(0, 122, 255, 0.07);
 }
 
@@ -2629,6 +2881,7 @@ body.is-fullscreen .rail-drag {
 }
 
 .plandoc-callout.tone-risk {
+  --tone-color: #e8a87c;
   background: rgba(232, 168, 124, 0.14);
 }
 
@@ -2637,6 +2890,7 @@ body.is-fullscreen .rail-drag {
 }
 
 .plandoc-callout.tone-note {
+  --tone-color: #7b7ed8;
   background: var(--paper);
   box-shadow: var(--glow-ring-thin);
 }
@@ -2661,6 +2915,11 @@ body.is-fullscreen .rail-drag {
   border-radius: var(--radius-card);
   box-shadow: var(--glow-ring-thin);
   padding: 16px 18px;
+  min-width: 0;
+}
+
+/* Only the rows scroll sideways — the title stays put */
+.plandoc-table-scroll {
   overflow-x: auto;
 }
 
@@ -2701,6 +2960,14 @@ body.is-fullscreen .rail-drag {
 
 .plandoc-table tr:last-child td {
   border-bottom: none;
+}
+
+.plandoc-table tbody tr {
+  transition: background 0.15s ease;
+}
+
+.plandoc-table tbody tr:hover {
+  background: rgba(0, 0, 0, 0.016);
 }
 
 .plandoc-table td:first-child {
@@ -2763,10 +3030,81 @@ body.is-fullscreen .rail-drag {
   color: var(--signal-blue);
 }
 
+.plandoc-question .s em {
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: var(--smoke);
+  margin-right: 5px;
+}
+
 .plandoc-questions .hint {
   display: block;
   margin-top: 10px;
   font-size: 11px;
+  color: var(--smoke);
+}
+
+/* The plan before it is written — a promise, not an apology */
+.plan-empty {
+  max-width: 560px;
+  padding: 34px 4px 40px;
+  animation: pane-in 0.45s var(--ease-spring) both;
+}
+
+.plan-empty h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 34px;
+  line-height: 1.05;
+  color: var(--ink);
+  margin: 8px 0 12px;
+}
+
+.plan-empty p {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--graphite);
+  margin: 0;
+}
+
+.plan-empty-list {
+  list-style: none;
+  margin: 22px 0 20px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--hairline);
+  border-radius: var(--radius-inner);
+  overflow: hidden;
+}
+
+.plan-empty-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  background: var(--paper);
+  padding: 12px 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--smoke);
+}
+
+.plan-empty-list .k {
+  flex: none;
+  width: 84px;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.plan-empty-foot {
+  font-size: 12px;
   color: var(--smoke);
 }
 
@@ -2954,9 +3292,9 @@ body.is-fullscreen .rail-drag {
 /* ============ Live session card (guide rail) ============ */
 
 .live-card {
-  background: var(--paper);
+  background: var(--ash);
   border-radius: var(--radius-card);
-  box-shadow: var(--glow-ring);
+  box-shadow: none;
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
@@ -3794,13 +4132,13 @@ body.is-fullscreen .rail-drag {
 
 .board-doc {
   display: grid;
-  grid-template-columns: 172px minmax(0, 1fr);
-  gap: 34px;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 30px;
   align-items: start;
   padding-top: 2px;
 }
 
-@media (max-width: 1240px) {
+@media (max-width: 1120px) {
   .board-doc {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3812,30 +4150,74 @@ body.is-fullscreen .rail-drag {
 
 .board-toc {
   position: sticky;
-  top: 0;
+  top: -8px;
   padding: 8px 0 12px;
-  background: var(--ash);
+}
+
+.toc-card {
+  background: var(--paper);
+  border-radius: var(--radius-inner);
+  box-shadow: var(--glow-ring-thin);
+  padding: 12px 10px 8px;
+}
+
+.toc-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 6px 6px;
+}
+
+.toc-total {
+  font-size: 11px;
+  color: var(--smoke);
 }
 
 .board-toc ol {
   list-style: none;
-  margin: 8px 0 10px;
+  margin: 4px 0 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .board-toc li button {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 4px 0;
-  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  font-size: 12.5px;
   color: var(--graphite);
   text-align: left;
-  transition: color 0.15s ease;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
-.board-toc li button:hover .toc-name {
+.board-toc li button:hover {
+  background: rgba(0, 0, 0, 0.04);
   color: var(--ink);
+}
+
+.board-toc li button.on {
+  background: color-mix(in srgb, var(--cat, var(--signal-blue)) 10%, transparent);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.board-toc .toc-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cat, var(--signal-blue));
+  flex: none;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, transform 0.2s var(--ease-spring);
+}
+
+.board-toc li button.on .toc-dot {
+  opacity: 1;
+  transform: scale(1.25);
 }
 
 .board-toc .toc-name {
@@ -3848,20 +4230,30 @@ body.is-fullscreen .rail-drag {
 
 .board-toc .toc-n {
   font-size: 10.5px;
+  font-weight: 600;
   color: var(--smoke);
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 50px;
+  padding: 1px 7px;
   flex: none;
+}
+
+.board-toc li button.on .toc-n {
+  background: var(--paper);
+  color: var(--cat, var(--signal-blue));
 }
 
 .board-toc .toc-empty {
   font-size: 11.5px;
   color: var(--smoke);
-  margin: 8px 0;
+  margin: 8px 6px;
 }
 
 .toc-fold {
   font-size: 11px;
   color: var(--smoke);
-  padding: 4px 0;
+  padding: 8px 8px 2px;
+  margin-top: 2px;
   border-top: 1px solid var(--hairline);
   width: 100%;
   text-align: left;
@@ -3873,7 +4265,7 @@ body.is-fullscreen .rail-drag {
 
 .board-main {
   min-width: 0;
-  max-width: 780px;
+  max-width: min(100%, var(--work-max));
 }
 
 .board-controls {
@@ -3945,15 +4337,28 @@ body.is-fullscreen .rail-drag {
 }
 
 .board-section-head {
+  /* The scroller keeps 8px of top padding: start the sticky head above it so
+     nothing ever peeks through between the head and the top edge. */
   position: sticky;
-  top: 0;
+  top: -8px;
   z-index: 2;
   display: flex;
   align-items: baseline;
   gap: 10px;
-  padding: 10px 2px 8px;
-  margin-bottom: 2px;
+  padding: 18px 2px 10px;
+  margin-bottom: 4px;
   background: var(--ash);
+}
+
+
+.board-section-head .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cat, var(--signal-blue));
+  align-self: center;
+  flex: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cat, var(--signal-blue)) 18%, transparent);
 }
 
 .board-section-head .label {
@@ -3972,7 +4377,12 @@ body.is-fullscreen .rail-drag {
 
 .board-section-head .n {
   font-size: 10.5px;
+  font-weight: 600;
   color: var(--smoke);
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 50px;
+  padding: 2px 8px;
+  align-self: center;
 }
 
 /* Folded card: title + one sentence. Open: the whole thing. */
@@ -4019,6 +4429,7 @@ body.is-fullscreen .rail-drag {
   font-size: 12px;
   color: var(--smoke);
   line-height: 1.45;
+  max-width: 100ch;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -4057,7 +4468,7 @@ body.is-fullscreen .rail-drag {
 /* ============ Keep in mind — the project's standing memory ============ */
 
 .memo {
-  max-width: 760px;
+  max-width: min(100%, 1080px);
   padding-top: 4px;
 }
 
@@ -4199,7 +4610,7 @@ button.memo-row:hover {
 /* ============ Build side — where we are ============ */
 
 .build-strip {
-  max-width: 760px;
+  max-width: min(100%, var(--work-max));
   background: var(--paper);
   border-radius: var(--radius-card);
   box-shadow: var(--glow-ring-thin);
@@ -4303,4 +4714,2084 @@ button.memo-row:hover {
   border-radius: 6px;
   padding: 2px 7px;
   color: var(--graphite);
+}
+
+/* ============ House folders in the sidebar — header, drag & drop ============ */
+
+.sidebar-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 10px;
+}
+
+.sidebar-label-actions {
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.sidebar:hover .sidebar-label-actions,
+.sidebar-label-actions:focus-within {
+  opacity: 1;
+}
+
+.sidebar-iconbtn {
+  width: 24px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--graphite);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-iconbtn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--ink);
+}
+
+.sidebar-iconbtn.active {
+  background: var(--paper);
+  color: var(--signal-blue);
+  box-shadow: var(--glow-ring-thin);
+}
+
+.side-empty {
+  margin: 8px 10px;
+  font-size: 11.5px;
+  color: var(--smoke);
+  line-height: 1.5;
+}
+
+.side-folder {
+  border-radius: 12px;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.side-folder.active {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.side-folder.active .side-folder-name {
+  color: var(--signal-blue);
+}
+
+.side-folder.drop-over {
+  background: rgba(0, 122, 255, 0.07);
+  box-shadow: inset 0 0 0 1.5px var(--signal-blue);
+}
+
+.side-folder-icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--smoke);
+}
+
+.side-folder-head {
+  border-radius: 9px;
+  transition: background 0.15s ease;
+}
+
+.side-folder-head:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.side-folder-rules {
+  margin-left: auto;
+}
+
+.side-folder-empty {
+  margin: 0 0 4px;
+  padding: 6px 12px 8px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--smoke);
+}
+
+.side-item.dragging {
+  opacity: 0.45;
+}
+
+.sidebar-projects.dragging .side-item:not(.dragging) {
+  pointer-events: none;
+}
+
+.side-dropout {
+  margin: 6px 2px 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1.5px dashed rgba(0, 0, 0, 0.18);
+  font-size: 11.5px;
+  color: var(--smoke);
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.side-dropout.drop-over {
+  border-color: var(--signal-blue);
+  background: rgba(0, 122, 255, 0.07);
+  color: var(--signal-blue);
+}
+
+.side-picker-sep {
+  height: 1px;
+  background: var(--hairline);
+  margin: 4px 6px;
+}
+
+.side-picker-row.quiet {
+  color: var(--smoke);
+  font-size: 12px;
+}
+
+.side-picker-row.quiet:hover {
+  color: var(--ink);
+}
+
+
+.side-folder-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+}
+
+.side-folder-bar .side-folder-head {
+  flex: 1;
+  min-width: 0;
+}
+
+.side-folder-edit {
+  width: 22px;
+  height: 22px;
+  border-radius: 50px;
+  display: grid;
+  place-items: center;
+  color: var(--smoke);
+  opacity: 0;
+  transition: opacity 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.side-folder:hover .side-folder-edit,
+.side-folder-edit:focus-visible {
+  opacity: 1;
+}
+
+.side-folder-edit:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--ink);
+}
+
+.side-folder-editlink {
+  margin-top: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--signal-blue);
+}
+
+.side-folder-editlink:hover {
+  text-decoration: underline;
+}
+
+.side-move {
+  position: absolute;
+  right: 34px;
+  top: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50px;
+  color: var(--smoke);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.18s ease, background 0.18s ease;
+}
+
+.side-item:hover .side-move,
+.side-move:focus-visible {
+  opacity: 1;
+}
+
+.side-move:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--ink);
+}
+
+/* The row whose picker is open floats above its neighbours */
+.side-item.picking {
+  z-index: 7;
+  transform: none;
+}
+
+/* The "put this project in…" popover — a small paper card under the row */
+.side-picker {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: calc(100% - 4px);
+  z-index: 6;
+  background: var(--paper);
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.08),
+    0 10px 28px rgba(0, 0, 0, 0.12);
+  padding: 6px;
+  cursor: default;
+  animation: pane-in 0.25s var(--ease-spring) both;
+}
+
+.side-picker-title {
+  margin: 0;
+  padding: 4px 8px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--smoke);
+}
+
+.side-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 8px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.side-picker-row:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.side-picker-row.current {
+  color: var(--signal-blue);
+  font-weight: 600;
+}
+
+.side-picker-row.new {
+  color: var(--smoke);
+  font-weight: 500;
+}
+
+.side-picker-row.new:hover {
+  color: var(--ink);
+}
+
+.side-picker-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.side-picker-count {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--smoke);
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 50px;
+  padding: 2px 7px;
+}
+
+/* Settings gear, pinned under the agents */
+.sidebar-foot {
+  flex: none;
+  padding: 4px 8px 12px;
+}
+
+.sidebar-settings {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--graphite);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-settings:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--ink);
+}
+
+.sidebar-settings.active {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--glow-ring-thin), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.sidebar-settings svg {
+  color: var(--smoke);
+}
+
+.sidebar-settings.active svg {
+  color: var(--signal-blue);
+}
+
+/* ============ Agents panel (sidebar compact / settings roomy) ============ */
+
+.agents-none {
+  margin: 0;
+  padding: 2px 10px 6px;
+  font-size: 11.5px;
+  color: var(--smoke);
+  line-height: 1.45;
+}
+
+.agents-settings .agent-row {
+  padding: 10px 12px;
+  font-size: 13.5px;
+  background: var(--paper);
+  border-radius: 14px;
+  box-shadow: var(--glow-ring-thin);
+  margin-bottom: 6px;
+  animation: none;
+}
+
+.agents-settings .agent-row .link {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.agent-state {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--smoke);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.agents-settings .agent-detail {
+  margin: -2px 4px 10px;
+  padding: 0 10px;
+}
+
+.agents-settings .agents-none {
+  padding: 0 0 8px;
+  font-size: 12.5px;
+}
+
+/* ============ Settings sheet (⌘,) ============ */
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(10, 10, 10, 0.28);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 9vh;
+  animation: egg-in 0.2s ease both;
+}
+
+.settings-overlay.closing {
+  animation: sheet-fade-out 0.22s ease both;
+}
+
+.settings-panel.closing {
+  animation: sheet-sink 0.22s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes sheet-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-sink {
+  to {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+}
+
+.settings-panel {
+  width: min(760px, 92vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ash);
+  border-radius: var(--radius-card-lg);
+  box-shadow: var(--glow-ring), 0 30px 80px rgba(12, 38, 77, 0.28);
+  overflow: hidden;
+  animation: rise-in 0.3s var(--ease-spring) both;
+}
+
+.settings-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 20px 14px 26px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.settings-head h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 28px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.settings-head .tabs {
+  margin-left: 4px;
+}
+
+.settings-close {
+  margin-left: auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--smoke);
+  background: rgba(0, 0, 0, 0.05);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.settings-close:hover {
+  background: rgba(0, 0, 0, 0.09);
+  color: var(--ink);
+}
+
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 26px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.set-group h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 21px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.set-intro {
+  margin: 4px 0 12px;
+  font-size: 12.5px;
+  color: var(--smoke);
+  line-height: 1.5;
+  max-width: 560px;
+}
+
+.set-empty {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--smoke);
+  line-height: 1.5;
+  font-style: italic;
+}
+
+.set-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border-radius: 16px;
+  box-shadow: var(--glow-ring-thin);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: box-shadow 0.2s ease;
+}
+
+.set-switch:hover {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+.set-switch input {
+  margin: 3px 0 0;
+  accent-color: var(--signal-blue);
+  flex: none;
+}
+
+.set-switch-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.set-switch-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.set-switch-hint {
+  font-size: 12px;
+  color: var(--graphite);
+  line-height: 1.5;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--paper);
+  border-radius: 14px;
+  box-shadow: var(--glow-ring-thin);
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.set-row-key {
+  flex: none;
+  min-width: 140px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--smoke);
+}
+
+.set-row-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+code.set-row-value {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--graphite);
+}
+
+.set-note {
+  margin: 2px 0 0 4px;
+  font-size: 12.5px;
+  color: var(--graphite);
+  line-height: 1.45;
+}
+
+/* ============ A house page (folder screen) ============ */
+
+.folder-page {
+  max-width: var(--reading-max);
+  padding: 4px 0 40px;
+}
+
+.folder-lede {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  color: var(--graphite);
+  line-height: 1.55;
+  max-width: 600px;
+}
+
+.folder-page .folder-editor {
+  background: var(--paper);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-ring);
+  border-top: none;
+  padding: 8px 20px 20px;
+}
+
+/* ============ Folder editor (house rules) ============ */
+
+/* "Hand it to your agent" — the alternative to typing rules by hand */
+.fe-agent {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(123, 126, 216, 0.09) 0%, rgba(123, 126, 216, 0.03) 100%);
+  box-shadow: inset 0 0 0 1px rgba(123, 126, 216, 0.18);
+}
+
+.fe-agent-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.fe-agent-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.fe-agent-hint {
+  font-size: 12px;
+  color: var(--graphite);
+  line-height: 1.5;
+}
+
+.fe-agent .disclosure {
+  margin-top: 6px;
+}
+
+.fe-agent .prompt-peek {
+  margin-top: 8px;
+}
+
+.fe-agent .pill {
+  flex: none;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .fe-agent {
+    flex-direction: column;
+  }
+}
+
+.folder-editor {
+  padding: 4px 14px 16px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: pane-in 0.35s var(--ease-spring) both;
+}
+
+.fe-identity {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.fe-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.fe-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--smoke);
+}
+
+.fe-input,
+.fe-rule-title,
+.fe-rule-content,
+.fe-scope-input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--ink);
+  user-select: text;
+  transition: border-color 0.15s ease;
+}
+
+.fe-input:focus,
+.fe-rule-title:focus,
+.fe-rule-content:focus,
+.fe-scope-input:focus {
+  outline: none;
+  border-color: var(--signal-blue);
+}
+
+select.fe-input {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--smoke) 50%),
+    linear-gradient(135deg, var(--smoke) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 55%, calc(100% - 11px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 30px;
+}
+
+.fe-rules-head h3,
+.fe-projects h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.fe-rules-head p {
+  margin: 3px 0 8px;
+  font-size: 12px;
+  color: var(--smoke);
+  line-height: 1.5;
+}
+
+.fe-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.fe-presets-label {
+  font-size: 11px;
+  color: var(--smoke);
+  margin-right: 2px;
+}
+
+.fe-chip {
+  padding: 4px 10px;
+  border-radius: 50px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--graphite);
+  background: rgba(0, 0, 0, 0.05);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.18s var(--ease-spring);
+}
+
+.fe-chip:hover {
+  background: rgba(0, 122, 255, 0.1);
+  color: var(--signal-blue);
+}
+
+.fe-chip:active {
+  transform: scale(0.96);
+}
+
+.fe-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--smoke);
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.fe-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fe-rule {
+  background: var(--ash);
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: side-in 0.35s var(--ease-spring) both;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+.fe-rule-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fe-rule-title {
+  font-weight: 600;
+}
+
+.fe-rule-remove {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--smoke);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.fe-rule-remove:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--ink);
+}
+
+.fe-rule-content {
+  resize: vertical;
+  min-height: 48px;
+  line-height: 1.45;
+}
+
+.fe-rule-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fe-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--smoke);
+  flex: 1;
+  min-width: 200px;
+}
+
+.fe-scope-input {
+  flex: 1;
+  padding: 5px 9px;
+  font-size: 11.5px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.fe-provenance {
+  font-size: 10.5px;
+  color: var(--smoke);
+}
+
+.fe-add {
+  align-self: flex-start;
+  padding: 7px 12px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--signal-blue);
+  transition: background 0.15s ease;
+}
+
+.fe-add:hover {
+  background: rgba(0, 122, 255, 0.08);
+}
+
+.fe-projects {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--hairline);
+}
+
+.fe-project-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.fe-project-name {
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.fe-add-project {
+  margin-top: 4px;
+}
+
+.fe-error {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(214, 62, 62, 0.08);
+  color: #a92c2c;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.fe-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.fe-delete {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--smoke);
+  padding: 6px 10px;
+  border-radius: 50px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.fe-delete:hover,
+.fe-delete.confirming {
+  color: #a92c2c;
+  background: rgba(214, 62, 62, 0.08);
+}
+
+/* ============ "What this product needs" — coverage rows in Keep in mind ============ */
+
+.memo-row .area-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: 1px;
+  background: #d2d2d2;
+}
+
+.memo-row.area-empty .area-dot {
+  background: #e8a87c;
+  box-shadow: 0 0 0 3px rgba(232, 168, 124, 0.25);
+}
+
+.memo-row.area-partial .area-dot {
+  background: #c98ab5;
+}
+
+.memo-row.area-covered .area-dot {
+  background: var(--signal-blue);
+}
+
+.memo-row.area-na {
+  opacity: 0.7;
+}
+
+.memo-row.area-na .memo-row-title {
+  text-decoration: line-through;
+  text-decoration-color: rgba(0, 0, 0, 0.25);
+}
+
+.memo-row.area-empty {
+  box-shadow: 0 0 0 1px rgba(232, 168, 124, 0.55);
+}
+
+@media (max-width: 900px) {
+  .fe-identity {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =====================================================================
+   HOUSES THAT NEST — the house page as a board, and the sidebar tree
+   (added with the nested-houses work; everything above is untouched)
+   ===================================================================== */
+
+/* ---- A brand-new house: hand it to your agent, exactly like a new idea ---- */
+
+.house-new {
+  max-width: var(--reading-max);
+  padding: 4px 0 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.house-hero {
+  background: var(--paper);
+  border-radius: var(--radius-card-lg);
+  box-shadow: var(--glow-ring);
+  padding: 26px 28px 24px;
+  animation: pane-in 0.4s var(--ease-spring) both;
+}
+
+.house-hero h2 {
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--ink);
+  margin: 8px 0 0;
+}
+
+.house-hero-line {
+  margin: 12px 0 18px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--graphite);
+  max-width: 52ch;
+}
+
+.house-hero-do {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.house-alt {
+  animation: pane-in 0.45s var(--ease-spring) both;
+  animation-delay: 60ms;
+}
+
+.house-alt-open {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 15px 18px;
+  border-radius: var(--radius-card);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  transition: box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.house-alt-open:hover {
+  background: var(--paper);
+  box-shadow: var(--glow-ring-thin);
+}
+
+.house-alt-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.house-alt-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--smoke);
+  max-width: 56ch;
+}
+
+.house-alt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px 6px;
+}
+
+.house-alt .folder-editor,
+.house-page .folder-editor {
+  background: var(--paper);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-ring);
+  border-top: none;
+  padding: 8px 20px 20px;
+}
+
+/* ---- An existing house: the board ---- */
+
+.house-page {
+  max-width: 940px;
+  padding: 4px 0 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.house-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.house-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.house-crumb {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--smoke);
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--ash);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+button.house-crumb:hover {
+  color: var(--signal-blue);
+  background: rgba(0, 122, 255, 0.08);
+}
+
+.house-crumb.current {
+  color: var(--ink);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+.house-crumb-sep {
+  font-size: 11px;
+  color: var(--smoke);
+}
+
+.house-counts {
+  font-size: 11.5px;
+  color: var(--smoke);
+}
+
+.house-edit {
+  margin-left: auto;
+}
+
+.house-group {
+  animation: pane-in 0.4s var(--ease-spring) both;
+}
+
+.house-group-head {
+  margin-bottom: 12px;
+}
+
+.house-group-head h3 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.house-group-note {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--smoke);
+  max-width: 62ch;
+}
+
+.house-rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.spec-card.house-rule {
+  margin-bottom: 0;
+}
+
+.house-rule-prov {
+  font-size: 10.5px;
+  color: var(--smoke);
+}
+
+/* A rule a closer house replaced: kept in plain sight, stepped back */
+.spec-card.house-rule.replaced {
+  background: var(--ash);
+  box-shadow: none;
+  opacity: 0.75;
+}
+
+.spec-card.house-rule.replaced h4 {
+  text-decoration: line-through;
+  text-decoration-color: rgba(0, 0, 0, 0.25);
+}
+
+.spec-card.house-rule.replaced:hover {
+  transform: none;
+}
+
+.house-rule-replaced {
+  margin-top: 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--graphite);
+}
+
+.house-empty {
+  padding: 26px 0 8px;
+}
+
+.house-inside {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.house-inside-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  padding: 11px 14px;
+  border-radius: var(--radius-inner);
+  background: var(--paper);
+  box-shadow: var(--glow-ring-thin);
+  transition: box-shadow 0.2s ease, transform 0.2s var(--ease-spring);
+}
+
+.house-inside-row:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--glow-ring);
+}
+
+.house-inside-row.is-house {
+  background: var(--ash);
+  box-shadow: none;
+}
+
+.house-inside-icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--smoke);
+}
+
+.house-inside-row .phase-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--phase-color, var(--signal-blue));
+  flex: none;
+}
+
+.house-inside-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.house-inside-meta {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--smoke);
+  flex: none;
+}
+
+.house-hand-off .house-hero-do {
+  padding-top: 2px;
+}
+
+/* ---- The editor's "Lives inside" picker ---- */
+
+.fe-parent {
+  grid-column: 1 / -1;
+}
+
+.fe-hint {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--smoke);
+  max-width: 60ch;
+}
+
+/* ---- Sidebar: the house tree ---- */
+
+.side-folder.nested {
+  margin: 0;
+}
+
+.side-folder-head {
+  padding-left: calc(10px + var(--depth, 0) * 12px);
+  border-radius: 10px;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.side-folder-head:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.side-folder-head.dragging {
+  opacity: 0.45;
+}
+
+.side-item {
+  padding-left: calc(10px + var(--depth, 0) * 12px);
+}
+
+.side-folder-empty {
+  padding-left: calc(12px + var(--depth, 0) * 12px);
+}
+
+/* While a HOUSE is being dragged, project rows must not swallow the drop */
+.sidebar-projects.dragging-house .side-item {
+  pointer-events: none;
+}
+
+/* ---- "Keep in mind": a rule a closer house replaced ---- */
+
+.memo-row.superseded {
+  opacity: 0.7;
+}
+
+.memo-row.superseded .memo-row-title {
+  text-decoration: line-through;
+  text-decoration-color: rgba(0, 0, 0, 0.25);
+}
+
+/* A scenario whose gap was closed keeps its note, in a calmer tone */
+.scenario-gap.resolved {
+  border-style: solid;
+  border-color: rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.03);
+}
+.scenario-gap.resolved strong {
+  color: var(--smoke);
+}
+
+/* ============ Evidence under a done step ============ */
+.evidence-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.evidence {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--graphite);
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 50px;
+  padding: 2px 9px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.evidence.claim {
+  color: #a4571f;
+  background: rgba(232, 168, 124, 0.22);
+  font-weight: 600;
+}
+.evidence.acc-pass {
+  color: #1e6b3a;
+  background: rgba(30, 164, 92, 0.12);
+}
+.evidence.acc-fail {
+  color: #a92c2c;
+  background: rgba(214, 62, 62, 0.1);
+}
+.evidence.acc-not_testable {
+  color: #a4571f;
+  background: rgba(232, 168, 124, 0.22);
+}
+.evidence.faded {
+  color: var(--smoke);
+  background: transparent;
+  padding-left: 2px;
+}
+
+/* "Check it for real" — the owner re-earns the green marks themselves */
+.build-recheck {
+  margin-left: 8px;
+  padding: 5px 12px;
+  border-radius: 50px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--signal-blue);
+  background: rgba(0, 122, 255, 0.08);
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+.build-recheck:hover {
+  background: rgba(0, 122, 255, 0.14);
+}
+.build-recheck[disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+.build-verdict {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--graphite);
+}
+.build-verdict.ok {
+  color: #1e6b3a;
+  font-weight: 500;
+}
+.build-verdict.bad {
+  color: #a92c2c;
+  font-weight: 500;
+}
+.build-verdict.faded {
+  color: var(--smoke);
+}
+
+/* ============ Deleting a house — visible, never buried ============ */
+.side-folder {
+  position: relative;
+}
+.side-folder:hover .side-folder-head {
+  padding-right: 30px;
+}
+.side-folder.confirming .side-folder-head {
+  padding-right: 66px;
+}
+/* While asking, the rule count is noise — the question is the only thing to read */
+.side-folder.confirming .side-folder-rules {
+  display: none;
+}
+.side-folder-delete {
+  position: absolute;
+  right: 6px;
+  top: 4px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 50px;
+  font-size: 11px;
+  color: var(--smoke);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.side-folder:hover .side-folder-delete,
+.side-folder-delete:focus-visible {
+  opacity: 1;
+}
+.side-folder-delete:hover,
+.side-folder-delete.confirming {
+  background: rgba(214, 62, 62, 0.1);
+  color: #a92c2c;
+  opacity: 1;
+}
+.side-folder-delete.confirming {
+  font-weight: 600;
+}
+.house-delete {
+  margin-left: 8px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--smoke);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.house-delete:hover,
+.house-delete.confirming {
+  color: #a92c2c;
+  background: rgba(214, 62, 62, 0.09);
+  font-weight: 600;
+}
+
+/* ============ Waiting on you ============ */
+
+.waiting {
+  width: min(100%, 720px);
+  margin: 0 auto 18px;
+  background: var(--paper);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-ring);
+  padding: 16px 18px 14px;
+  animation: pane-in 0.4s var(--ease-spring) both;
+}
+
+.waiting-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.waiting-bar h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 22px;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.waiting-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a4571f;
+  background: rgba(232, 168, 124, 0.25);
+  border-radius: 50px;
+  padding: 2px 9px;
+}
+
+.waiting-lede {
+  margin: 4px 0 12px;
+  font-size: 12.5px;
+  color: var(--smoke);
+  line-height: 1.5;
+}
+
+.waiting-item {
+  border-top: 1px solid var(--hairline);
+  padding: 12px 0 10px;
+}
+
+.waiting-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.waiting-kind {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--smoke);
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 50px;
+  padding: 2px 8px;
+}
+
+.waiting-item.question .waiting-kind {
+  color: var(--signal-blue);
+  background: rgba(0, 122, 255, 0.1);
+}
+
+.waiting-item.blocked .waiting-kind,
+.waiting-item.failed .waiting-kind {
+  color: #a92c2c;
+  background: rgba(214, 62, 62, 0.1);
+}
+
+.waiting-item.deferred .waiting-kind {
+  color: #a4571f;
+  background: rgba(232, 168, 124, 0.25);
+}
+
+.waiting-project {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--graphite);
+}
+
+.waiting-project:hover {
+  color: var(--signal-blue);
+  text-decoration: underline;
+}
+
+.waiting-when {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--smoke);
+}
+
+.waiting-title {
+  margin: 7px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+.waiting-detail {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--graphite);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.waiting-answer {
+  margin-top: 8px;
+}
+
+.waiting-input {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline);
+  background: var(--paper);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink);
+  resize: vertical;
+  user-select: text;
+}
+
+.waiting-input:focus {
+  outline: none;
+  border-color: var(--signal-blue);
+}
+
+.waiting-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+}
+
+.waiting-defer {
+  font-size: 12px;
+  color: var(--smoke);
+}
+
+.waiting-defer:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.waiting-more {
+  margin-top: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--signal-blue);
+}
+
+.welcome .waiting + .cursor-scene {
+  min-height: 220px;
+}
+
+/* A secondary "any time" block in the rail — present, never shouting */
+.next-step.quiet h2 {
+  font-size: 21px;
+}
+.next-step.quiet .how {
+  margin-bottom: 10px;
+}
+
+/* ============ The house tree, tidied ============
+   One line per house, whatever its depth: the name truncates instead of
+   wrapping, the count never breaks in two, and a hairline guide replaces the
+   guesswork of counting indents. */
+
+.side-folder-head {
+  align-items: center;
+  gap: 7px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  min-width: 0;
+}
+
+.side-folder-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  line-height: 1.25;
+}
+
+/* A house inside a house is a smaller voice than the one above it */
+.side-folder.nested > .side-folder-head .side-folder-name {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.side-folder.nested > .side-folder-head .side-folder-icon {
+  opacity: 0.7;
+}
+
+.side-folder-rules {
+  flex: none;
+  white-space: nowrap;
+  font-size: 9.5px;
+  line-height: 1.2;
+  padding: 2px 7px;
+}
+
+/* The guide line: drawn from the parent's icon down through its children, so
+   depth is read, not counted. */
+.side-folder.nested {
+  position: relative;
+}
+
+.side-folder.nested::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 6px;
+  left: calc(16px + (var(--depth, 1) - 1) * 12px);
+  width: 1px;
+  background: var(--hairline);
+  pointer-events: none;
+}
+
+.side-folder.nested.active::before,
+.side-folder.nested.drop-over::before {
+  background: rgba(0, 122, 255, 0.35);
+}
+
+/* An empty house says so once, quietly, on one line */
+.side-folder-empty {
+  margin: 0 0 2px;
+  padding-top: 2px;
+  padding-bottom: 6px;
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The open house is a soft block, not a grey slab */
+.side-folder.active {
+  background: rgba(0, 122, 255, 0.05);
+  border-radius: 12px;
+}
+
+.side-folder.active > .side-folder-head {
+  background: transparent;
+}
+
+/* ============ House rules, edited where they are read ============ */
+
+.house-rule.editable {
+  cursor: text;
+  transition: box-shadow 0.18s ease, transform 0.2s var(--ease-spring);
+}
+
+.house-rule.editable:hover {
+  box-shadow: var(--glow-ring-thin), 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.house-rule-hint {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--smoke);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.house-rule.editable:hover .house-rule-hint {
+  opacity: 1;
+}
+
+.house-rule-override {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--signal-blue);
+  padding: 2px 8px;
+  border-radius: 50px;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.house-rule:hover .house-rule-override,
+.house-rule-override:focus-visible {
+  opacity: 1;
+}
+
+.house-rule-override:hover {
+  background: rgba(0, 122, 255, 0.08);
+}
+
+/* The card while it is being written in: same shape, same type, just live */
+.house-rule.editing {
+  box-shadow: var(--glow-ring), 0 0 0 6px rgba(0, 122, 255, 0.1);
+}
+
+.house-rule-title-input,
+.house-rule-body-input,
+.house-rule-scope input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  color: var(--ink);
+  padding: 0;
+  user-select: text;
+}
+
+.house-rule-title-input:focus,
+.house-rule-body-input:focus,
+.house-rule-scope input:focus {
+  outline: none;
+}
+
+.house-rule-title-input {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-bottom: 6px;
+}
+
+.house-rule-body-input {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--graphite);
+  resize: none;
+  overflow: hidden;
+  min-height: 66px;
+}
+
+.house-rule-edit-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.house-rule-scope {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 150px;
+  font-size: 11px;
+  color: var(--smoke);
+}
+
+.house-rule-scope input {
+  flex: 1;
+  font-size: 11.5px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  color: var(--graphite);
+}
+
+.house-rule-delete {
+  font-size: 12px;
+  color: var(--smoke);
+  padding: 6px 10px;
+  border-radius: 50px;
+}
+
+.house-rule-delete:hover {
+  color: #a92c2c;
+  background: rgba(214, 62, 62, 0.08);
+}
+
+/* The empty slot at the end of the rules, in the shape of a rule */
+.house-rule-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 96px;
+  border-radius: var(--radius-card);
+  border: 1.5px dashed rgba(0, 0, 0, 0.14);
+  color: var(--smoke);
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.house-rule-add:hover {
+  border-color: var(--signal-blue);
+  color: var(--signal-blue);
+  background: rgba(0, 122, 255, 0.04);
+}
+
+.house-rule-add-plus {
+  font-size: 17px;
+  line-height: 1;
+}
+
+/* ============ The build, read as an ordered list of blocks ============ */
+
+.step-block {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 6px 0 2px;
+  border-top: 1px solid var(--hairline);
+}
+
+.step-block:first-of-type {
+  border-top: none;
+}
+
+.step-number {
+  margin-top: 14px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--smoke);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.step-block.done .step-number {
+  color: #1e6b3a;
+  background: rgba(30, 164, 92, 0.12);
+}
+
+.step-block.running .step-number {
+  color: #fff;
+  background: var(--signal-blue);
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15);
+}
+
+.step-block-body {
+  min-width: 0;
+}
+
+/* How far this block has got, in one line under its title */
+.step-block-progress {
+  height: 3px;
+  border-radius: 50px;
+  background: rgba(0, 0, 0, 0.07);
+  margin: 2px 0 6px 34px;
+  overflow: hidden;
+}
+
+.step-block-progress span {
+  display: block;
+  height: 100%;
+  border-radius: 50px;
+  background: var(--signal-blue);
+  transition: width 0.4s var(--ease-spring);
+}
+
+.task-row .sub-label {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--smoke);
+  margin-right: 2px;
+}
+
+/* ============ The build ladder in the rail ============ */
+
+.build-ladder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ladder-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ladder-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--graphite);
+}
+
+.ladder {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ladder-step {
+  display: flex;
+  gap: 10px;
+  padding: 5px 0;
+  position: relative;
+}
+
+.ladder-step::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 20px;
+  bottom: -5px;
+  width: 1px;
+  background: var(--hairline);
+}
+
+.ladder-step:last-child::before {
+  display: none;
+}
+
+.ladder-bullet {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 3px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 0, 0, 0.18);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--paper);
+  z-index: 1;
+}
+
+.ladder-step.done .ladder-bullet {
+  background: var(--signal-blue);
+  border-color: var(--signal-blue);
+}
+
+.ladder-step.current .ladder-bullet {
+  border-color: var(--signal-blue);
+  border-width: 3px;
+  animation: dot-breathe 3.2s ease-in-out infinite;
+}
+
+.ladder-step.stuck .ladder-bullet,
+.ladder-step.recheck .ladder-bullet,
+.ladder-step.parked .ladder-bullet {
+  border-color: #e8a87c;
+  background: rgba(232, 168, 124, 0.35);
+}
+
+.ladder-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ladder-title {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--graphite);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ladder-step.current .ladder-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ladder-step.done .ladder-title {
+  color: var(--smoke);
+}
+
+.ladder-sub {
+  font-size: 11px;
+  color: var(--smoke);
+}
+
+.ladder-sub.running {
+  color: var(--signal-blue);
+  font-weight: 600;
+}
+
+.ladder-sub.warn {
+  color: #a4571f;
+  font-weight: 600;
+}
+
+.ladder-more {
+  margin: 0;
+  font-size: 11px;
+  color: var(--smoke);
+  font-style: italic;
 }

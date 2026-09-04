@@ -55,7 +55,8 @@ export function CursorScene({
   variant = 'hero',
   agents,
   caption,
-  spotlight
+  spotlight,
+  awake = false
 }: {
   word: string
   /** Spec titles floating around; defaults to the canonical board topics */
@@ -67,6 +68,9 @@ export function CursorScene({
   /** One plain line under the name, header variant only */
   caption?: React.ReactNode
   spotlight?: SceneSpotlight
+  /** Header only: the board is still empty — grow the band and let the spec
+   *  chips write themselves in, so the top of the screen IS the waiting room. */
+  awake?: boolean
 }): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const engineRef = useRef<FlyingCursors | null>(null)
@@ -113,15 +117,15 @@ export function CursorScene({
   }, [spotlight?.key, spotlight?.text, spotlight?.nonce])
 
   const shown = useMemo(() => {
-    if (header) return []
+    if (header && !awake) return []
     const list = (chips && chips.length ? chips : DEFAULT_CHIPS).slice(0, CHIP_SLOTS.length)
     return list.map((text, i) => ({ text, slot: CHIP_SLOTS[i], i }))
-  }, [chips, header])
+  }, [chips, header, awake])
 
   return (
     <div
       ref={hostRef}
-      className={`cursor-scene${compact ? ' compact' : ''}${header ? ' header' : ''}`}
+      className={`cursor-scene${compact ? ' compact' : ''}${header ? ' header' : ''}${header && awake ? ' awake' : ''}`}
     >
       {shown.map(({ text, slot, i }) => (
         <span

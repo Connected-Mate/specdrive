@@ -9,6 +9,15 @@ import type { AgentId, DetectedAgent } from '../shared/types'
 const execFileP = promisify(execFile)
 const HOME = os.homedir()
 
+/** Exactly what an agent's config tells it to launch — command, args AND the
+ *  environment. Verification must use this and nothing else, or it can pass
+ *  while the real agent fails. */
+interface AgentEntry {
+  command: string
+  args: string[]
+  env: Record<string, string>
+}
+
 export function mcpServerPath(mainDir: string, isPackaged: boolean): string {
   // Packaged: extraResources copies the bundled server to Resources/mcp.
   // Unpackaged: main runs from <root>/out/main, the server source sits at <root>/mcp.
@@ -42,20 +51,45 @@ async function which(bin: string): Promise<boolean> {
   }
 }
 
-let cachedNodePath: string | null = null
+let cachedNode: { path: string; isElectron: boolean } | null = null
 
-/** Absolute node path — GUI agents (Cursor, Claude Desktop…) spawn MCP servers
- *  with a minimal PATH where a bare "node" does not resolve. */
-export async function nodeBinPath(): Promise<string> {
-  if (cachedNodePath) return cachedNodePath
+/** Where Node usually lives when the login shell does not say. Homebrew (both
+ *  architectures), the system, MacPorts, then whatever nvm has installed. */
+function knownNodePaths(): string[] {
+  const list = ['/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node', '/opt/local/bin/node']
+  try {
+    const nvm = path.join(HOME, '.nvm', 'versions', 'node')
+    for (const v of fs.readdirSync(nvm).sort().reverse()) list.push(path.join(nvm, v, 'bin', 'node'))
+  } catch {
+    // no nvm — nothing to add
+  }
+  return list
+}
+
+/** The binary an agent must launch, and whether it is our own app standing in
+ *  for Node. That distinction matters: the Electron binary only behaves as Node
+ *  when ELECTRON_RUN_AS_NODE=1 is in its environment — without it, launching it
+ *  opens ANOTHER copy of SpecDrive instead of serving the board. */
+export async function nodeBin(): Promise<{ path: string; isElectron: boolean }> {
+  if (cachedNode) return cachedNode
   try {
     const { stdout } = await execFileP('/bin/zsh', ['-lc', 'command -v node'], { timeout: 8000 })
     const p = stdout.trim().split('\n').pop() ?? ''
-    cachedNodePath = p.startsWith('/') ? p : process.execPath
+    if (p.startsWith('/') && exists(p)) {
+      cachedNode = { path: p, isElectron: false }
+      return cachedNode
+    }
   } catch {
-    cachedNodePath = process.execPath
+    // login shell told us nothing — try the usual places
   }
-  return cachedNodePath
+  const found = knownNodePaths().find((p) => exists(p))
+  cachedNode = found ? { path: found, isElectron: false } : { path: process.execPath, isElectron: true }
+  return cachedNode
+}
+
+/** Kept for the callers that only need the path (the copy-paste setup snippet). */
+export async function nodeBinPath(): Promise<string> {
+  return (await nodeBin()).path
 }
 
 function readJsonSafe(file: string): Record<string, unknown> {
@@ -98,17 +132,17 @@ function hasSpecdriveEntry(file: string): boolean {
   return Boolean(cfg.mcpServers && 'specdrive' in cfg.mcpServers)
 }
 
-function addSpecdriveJsonEntry(file: string, serverPath: string, nodeBin: string): void {
+function addSpecdriveJsonEntry(file: string, serverPath: string, bin: string, isElectron: boolean): void {
   writeJsonMerged(file, (cfg) => {
     const c = cfg as McpServersConfig
     c.mcpServers = {
       ...(c.mcpServers ?? {}),
       specdrive: {
-        command: nodeBin,
+        command: bin,
         args: [serverPath],
-        // When the fallback is the Electron binary itself, this makes it act
-        // as plain Node; harmless for a real node binary.
-        env: { ELECTRON_RUN_AS_NODE: '1' }
+        // Only when the stand-in is our own app binary: it must be told to act
+        // as plain Node, or launching it opens another SpecDrive window.
+        ...(isElectron ? { env: { ELECTRON_RUN_AS_NODE: '1' } } : {})
       }
     }
   })
@@ -123,47 +157,59 @@ const CODEX_CFG = path.join(HOME, '.codex', 'config.toml')
 const CLAUDE_JSON = path.join(HOME, '.claude.json')
 
 function claudeCodeConnected(): boolean {
-  const cfg = readJsonSafe(CLAUDE_JSON) as McpServersConfig
-  return Boolean(cfg.mcpServers && 'specdrive' in cfg.mcpServers)
+  return entryLooksUsable(claudeEntry())
 }
 
 function codexConnected(): boolean {
-  try {
-    return fs.readFileSync(CODEX_CFG, 'utf8').includes('[mcp_servers.specdrive]')
-  } catch {
-    return false
-  }
+  return entryLooksUsable(codexEntry())
 }
 
-function specdriveEntry(file: string): { command: string; args: string[] } | null {
+/** A written entry only counts when the binary it names still exists, and when
+ *  an Electron stand-in carries the flag that makes it behave as Node. */
+function entryLooksUsable(e: AgentEntry | null): boolean {
+  if (!e?.command || !exists(e.command)) return false
+  const isElectronBin = /\.app\/Contents\/MacOS\//.test(e.command)
+  if (isElectronBin && e.env.ELECTRON_RUN_AS_NODE !== '1') return false
+  return true
+}
+
+function specdriveEntry(file: string): AgentEntry | null {
   const cfg = readJsonSafe(file) as McpServersConfig
-  const e = cfg.mcpServers?.['specdrive'] as { command?: string; args?: string[] } | undefined
+  const e = cfg.mcpServers?.['specdrive'] as { command?: string; args?: string[]; env?: Record<string, string> } | undefined
   if (!e?.command) return null
-  return { command: e.command, args: e.args ?? [] }
+  return { command: e.command, args: e.args ?? [], env: e.env ?? {} }
 }
 
-function codexEntry(): { command: string; args: string[] } | null {
+function codexEntry(): AgentEntry | null {
   try {
     const raw = fs.readFileSync(CODEX_CFG, 'utf8')
-    const block = raw.split('[mcp_servers.specdrive]')[1]
-    if (!block) return null
+    // Stop at the next [section] so we never read a neighbour's settings.
+    const after = raw.split('[mcp_servers.specdrive]')[1]
+    if (after === undefined) return null
+    const block = after.split(/\n\[/)[0]
     const cmd = /command\s*=\s*"([^"]+)"/.exec(block)?.[1]
     const args = /args\s*=\s*\[([^\]]*)\]/.exec(block)?.[1]
     if (!cmd) return null
+    const env: Record<string, string> = {}
+    const envInline = /env\s*=\s*\{([^}]*)\}/.exec(block)?.[1]
+    if (envInline) for (const m of envInline.matchAll(/([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]*)"/g)) env[m[1]] = m[2]
+    const envTable = after.split('[mcp_servers.specdrive.env]')[1]?.split(/\n\[/)[0]
+    if (envTable) for (const m of envTable.matchAll(/([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]*)"/g)) env[m[1]] = m[2]
     return {
       command: cmd,
-      args: args ? [...args.matchAll(/"([^"]+)"/g)].map((m) => m[1]) : []
+      args: args ? [...args.matchAll(/"([^"]+)"/g)].map((m) => m[1]) : [],
+      env
     }
   } catch {
     return null
   }
 }
 
-function claudeEntry(): { command: string; args: string[] } | null {
+function claudeEntry(): AgentEntry | null {
   return specdriveEntry(CLAUDE_JSON)
 }
 
-const AGENT_CONFIGS: Record<string, { path: string; entry: () => { command: string; args: string[] } | null }> = {
+const AGENT_CONFIGS: Record<string, { path: string; entry: () => AgentEntry | null }> = {
   'claude-code': { path: CLAUDE_JSON, entry: claudeEntry },
   cursor: { path: CURSOR_MCP, entry: () => specdriveEntry(CURSOR_MCP) },
   'claude-desktop': { path: CLAUDE_DESKTOP_CFG, entry: () => specdriveEntry(CLAUDE_DESKTOP_CFG) },
@@ -194,9 +240,11 @@ export async function verifyAgent(id: AgentId): Promise<{ ok: boolean; detail: s
     }
     let child: ReturnType<typeof import('node:child_process').spawn>
     try {
+      // The config's own environment, never a friendlier one: this must fail
+      // exactly where the real agent would.
       child = spawn(entry.command, entry.args, {
         stdio: ['pipe', 'pipe', 'ignore'],
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+        env: { ...process.env, ...entry.env }
       })
     } catch (e) {
       resolve({ ok: false, detail: `Could not launch "${entry.command}": ${String(e)}`, checkedAt })
@@ -313,43 +361,61 @@ export async function detectAgents(serverPath: string): Promise<DetectedAgent[]>
 }
 
 export async function connectAgent(id: AgentId, serverPath: string): Promise<void> {
-  const nodeBin = await nodeBinPath()
+  const { path: bin, isElectron } = await nodeBin()
+  const nodeBin_ = bin
   // Both paths end up inside a shell command and a TOML file: only accept
   // plain path characters, never quotes, backticks or $(...).
-  for (const p of [nodeBin, serverPath]) {
+  for (const p of [nodeBin_, serverPath]) {
     if (!/^[A-Za-z0-9_./ +@()-]+$/.test(p)) throw new Error(`Refusing to write an unsafe path into agent config: ${p}`)
   }
   switch (id) {
     case 'claude-code': {
       // The CLI merges into ~/.claude.json for us; user scope = available everywhere.
+      const envFlag = isElectron ? '--env ELECTRON_RUN_AS_NODE=1 ' : ''
       await execFileP(
         '/bin/zsh',
-        ['-lc', `claude mcp add specdrive --scope user -- "${nodeBin}" "${serverPath}"`],
+        ['-lc', `claude mcp add specdrive --scope user ${envFlag}-- "${nodeBin_}" "${serverPath}"`],
         { timeout: 20000 }
       )
       return
     }
     case 'cursor':
-      addSpecdriveJsonEntry(CURSOR_MCP, serverPath, nodeBin)
+      addSpecdriveJsonEntry(CURSOR_MCP, serverPath, nodeBin_, isElectron)
       return
     case 'claude-desktop':
-      addSpecdriveJsonEntry(CLAUDE_DESKTOP_CFG, serverPath, nodeBin)
+      addSpecdriveJsonEntry(CLAUDE_DESKTOP_CFG, serverPath, nodeBin_, isElectron)
       return
     case 'windsurf':
-      addSpecdriveJsonEntry(WINDSURF_MCP, serverPath, nodeBin)
+      addSpecdriveJsonEntry(WINDSURF_MCP, serverPath, nodeBin_, isElectron)
       return
     case 'gemini-cli':
-      addSpecdriveJsonEntry(GEMINI_CFG, serverPath, nodeBin)
+      addSpecdriveJsonEntry(GEMINI_CFG, serverPath, nodeBin_, isElectron)
       return
     case 'codex-cli': {
-      if (codexConnected()) return
+      // Rewrite rather than append: a broken entry written by an earlier try
+      // must not survive, or Codex keeps launching the wrong thing forever.
       fs.mkdirSync(path.dirname(CODEX_CFG), { recursive: true })
-      const entry = `\n[mcp_servers.specdrive]\ncommand = "${nodeBin}"\nargs = ["${serverPath}"]\n`
-      fs.appendFileSync(CODEX_CFG, entry)
+      let raw = ''
+      try {
+        raw = fs.readFileSync(CODEX_CFG, 'utf8')
+      } catch {
+        raw = ''
+      }
+      const head = raw.split('[mcp_servers.specdrive]')[0].replace(/\s+$/, '')
+      const rest = raw.includes('[mcp_servers.specdrive]')
+        ? raw.split('[mcp_servers.specdrive]').slice(1).join('[mcp_servers.specdrive]')
+        : ''
+      // Everything after our block that belongs to somebody else is kept.
+      const tailIdx = rest.search(/\n\[(?!mcp_servers\.specdrive)/)
+      const tail = tailIdx >= 0 ? rest.slice(tailIdx) : ''
+      const block =
+        `[mcp_servers.specdrive]\ncommand = "${nodeBin_}"\nargs = ["${serverPath}"]\n` +
+        (isElectron ? `env = { ELECTRON_RUN_AS_NODE = "1" }\n` : '')
+      fs.writeFileSync(CODEX_CFG, `${head ? `${head}\n\n` : ''}${block}${tail}`)
       return
     }
     case 'antigravity':
-      addSpecdriveJsonEntry(ANTIGRAVITY_MCP, serverPath, nodeBin)
+      addSpecdriveJsonEntry(ANTIGRAVITY_MCP, serverPath, nodeBin_, isElectron)
       return
   }
 }

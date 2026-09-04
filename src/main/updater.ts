@@ -129,15 +129,17 @@ export function initUpdater(): void {
 
 let lastFocusCheck = 0
 
-/** Manual "Check for updates…" — always answers the user, success or not. */
-export async function checkForUpdatesInteractive(): Promise<void> {
+/** Manual "Check for updates…" — always answers the user, success or not.
+ *  Returns the same answer in one plain sentence so the Settings screen can
+ *  keep it on screen after the dialog is dismissed. */
+export async function checkForUpdatesInteractive(): Promise<string> {
   if (!app.isPackaged) {
     await dialog.showMessageBox({
       type: 'info',
       title: 'Development build',
       message: 'Updates only apply to the installed app.'
     })
-    return
+    return 'This is a development build — updates only apply to the installed app.'
   }
   try {
     const mod = (await import('electron-updater')) as unknown as {
@@ -155,12 +157,14 @@ export async function checkForUpdatesInteractive(): Promise<void> {
         message: `SpecDrive ${remote} is available — downloading now.`,
         detail: `You are running ${app.getVersion()}. You will be asked to restart when it is ready.`
       })
+      return `SpecDrive ${remote} is downloading — you will be asked to restart when it is ready.`
     } else {
       await dialog.showMessageBox({
         type: 'info',
         title: 'You are up to date',
         message: `SpecDrive ${app.getVersion()} is the latest version.`
       })
+      return `You are up to date — SpecDrive ${app.getVersion()} is the latest version.`
     }
   } catch (e) {
     log(`interactive check failed: ${String(e)}`)
@@ -173,5 +177,6 @@ export async function checkForUpdatesInteractive(): Promise<void> {
       defaultId: 0
     })
     if (r.response === 1 && logFile) shell.showItemInFolder(logFile)
+    return 'Could not reach the update server just now. Check your internet connection and try again.'
   }
 }

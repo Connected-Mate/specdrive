@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo, useRef } from 'react'
 import type { Flow } from '@shared/types'
 import { KitWireframe } from './wireframe-kit/KitWireframe'
 import type { PlanWireframeNode } from './wireframe-kit/types'
@@ -31,24 +31,54 @@ interface Node {
 
 function layout(flow: Flow, sketchScreens: Set<string>): { nodes: Node[]; w: number; h: number } {
   const ids = flow.screens.map((s) => s.id)
-  const depth = new Map<string, number>(ids.map((id) => [id, 0]))
-  for (let pass = 0; pass < ids.length; pass++) {
-    let changed = false
-    for (const l of flow.links) {
-      const d = (depth.get(l.from) ?? 0) + 1
-      if (d > (depth.get(l.to) ?? 0) && d < ids.length) {
-        depth.set(l.to, d)
-        changed = true
+  // Columns = distance from the entry screen, walking the links breadth-first.
+  // A link that points back to a screen already placed (a loop: "train
+  // cancelled → search again") is still drawn, but never pushes the entry to
+  // the far end of the map.
+  const entryId = flow.screens.find((s) => s.entry)?.id ?? ids[0]
+  const depth = new Map<string, number>()
+  if (entryId) {
+    depth.set(entryId, 0)
+    const queue = [entryId]
+    while (queue.length) {
+      const cur = queue.shift()!
+      for (const l of flow.links) {
+        if (l.from !== cur || depth.has(l.to) || !ids.includes(l.to)) continue
+        depth.set(l.to, (depth.get(cur) ?? 0) + 1)
+        queue.push(l.to)
       }
     }
-    if (!changed) break
   }
+  // Screens nobody links to yet sit in a last column of their own.
+  const orphanCol = (depth.size ? Math.max(...depth.values()) : 0) + 1
+  for (const id of ids) if (!depth.has(id)) depth.set(id, orphanCol)
 
   const cols = new Map<number, string[]>()
   for (const id of ids) {
     const d = depth.get(id) ?? 0
     cols.set(d, [...(cols.get(d) ?? []), id])
   }
+  // Order inside each column so arrows run as straight as possible: a screen
+  // sits across from the screens that lead to it (barycentre, two passes —
+  // the classic trick, and enough for maps of this size).
+  const sortedDepths = [...cols.keys()].sort((a, b) => a - b)
+  const rowOf = new Map<string, number>()
+  for (const d of sortedDepths) (cols.get(d) ?? []).forEach((id, i) => rowOf.set(id, i))
+  for (let pass = 0; pass < 2; pass++) {
+    for (const d of sortedDepths.slice(1)) {
+      const list = cols.get(d) ?? []
+      const score = new Map<string, number>()
+      for (const id of list) {
+        const parents = flow.links
+          .filter((l) => l.to === id && (depth.get(l.from) ?? 0) < d)
+          .map((l) => rowOf.get(l.from) ?? 0)
+        score.set(id, parents.length ? parents.reduce((a, b) => a + b, 0) / parents.length : rowOf.get(id) ?? 0)
+      }
+      list.sort((a, b) => (score.get(a) ?? 0) - (score.get(b) ?? 0))
+      list.forEach((id, i) => rowOf.set(id, i))
+    }
+  }
+
   const maxDepth = Math.max(...cols.keys())
   const tallest = Math.max(...[...cols.values()].map((c) => c.length))
   const H = PAD * 2 + tallest * NODE_H + (tallest - 1) * ROW_GAP
@@ -77,23 +107,39 @@ export function FlowMap({
   flow,
   sketchScreens,
   thumbs,
-  onOpenScreen
+  onOpenScreen,
+  caption
 }: {
   flow: Flow
   sketchScreens: Set<string>
   /** screen name (lowercase) → wireframe thumb (kit tree or legacy html url) */
   thumbs: Record<string, FlowThumb>
   onOpenScreen: (screenName: string) => void
+  /** One line, laid over the bottom-left of the board instead of under it */
+  caption?: React.ReactNode
 }): React.JSX.Element {
   const { nodes, w, h } = useMemo(() => layout(flow, sketchScreens), [flow, sketchScreens])
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
+  // A fresh map always opens on its first screen, never where the last one was scrolled.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollLeft = 0
+  }, [flow])
 
   return (
     <div className="flowmap-card">
+      <div className="flowmap-scroll" ref={scrollRef}>
       <svg
         className="flowmap"
         viewBox={`0 0 ${w} ${h}`}
-        style={{ width: '100%', minWidth: `${Math.round(w * 0.9)}px`, height: 'auto', display: 'block' }}
+        preserveAspectRatio="xMidYMid meet"
+        style={{
+          // The whole map, centred in the pane, always. Nothing to scroll for,
+          // nothing pushed into a corner.
+          width: '100%',
+          height: '100%',
+          display: 'block'
+        }}
       >
         <defs>
           <marker
@@ -258,6 +304,8 @@ export function FlowMap({
           )
         })}
       </svg>
+      </div>
+      {caption && <p className="flowmap-caption">{caption}</p>}
     </div>
   )
 }

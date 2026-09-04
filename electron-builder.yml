@@ -17,9 +17,12 @@ publish:
   repo: specdrive-site
 mac:
   category: public.app-category.developer-tools
+  # One build for every Mac: Apple silicon and Intel alike.
   target:
-    - dmg
-    - zip
+    - target: dmg
+      arch: [universal]
+    - target: zip
+      arch: [universal]
   icon: resources/icon.png
   hardenedRuntime: true
   gatekeeperAssess: false

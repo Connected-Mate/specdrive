@@ -10,3 +10,6 @@ export const BUILD_PROMPT: string
 export const AUTOBUILD_PROMPT: string
 export const ITERATE_PROMPT: string
 export const DEEP_DIVE_PROMPT: string
+export const FOLDER_PROMPT: string
+export const FOLDER_REVIEW_PROMPT: string
+export const REFINE_SPECS_PROMPT: string

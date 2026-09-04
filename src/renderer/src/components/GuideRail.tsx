@@ -1,11 +1,24 @@
-import React, { useEffect, useRef, useState } from 'react'
-import type { ActivityEntry, LiveSession, ProjectBundle } from '@shared/types'
+import React, { useEffect, useState } from 'react'
+import type { ActivityEntry, Folder, LiveSession, ProjectBundle } from '@shared/types'
 import { PHASES } from '@shared/types'
-import { ADOPT_PROMPT, AUTOBUILD_PROMPT, DEEP_DIVE_PROMPT, PHASE_PROMPTS, START_PROMPT, fillPrompt, type McpInfo } from '@shared/prompts'
+import {
+  ADOPT_PROMPT,
+  AUTOBUILD_PROMPT,
+  DEEP_DIVE_PROMPT,
+  REFINE_SPECS_PROMPT,
+  FOLDER_PROMPT,
+  FOLDER_REVIEW_PROMPT,
+  PHASE_PROMPTS,
+  START_PROMPT,
+  fillFolderPrompt,
+  fillPrompt,
+  type McpInfo
+} from '@shared/prompts'
 import { GlitchBadge } from './glitch/GlitchBadge'
 import { clientLabel, timeAgo, useLiveSessions } from '@/lib/useLive'
 import { CopyIcon, TickIcon } from './Icons'
 import { useToast } from './Toast'
+import { CopyButton, PromptPeek } from './PromptCopy'
 import { PHASE_COLOR } from '@/lib/phaseColors'
 import { WORLD_LINE, WORLD_WORD, worldColor, worldOf } from '@/lib/mode'
 
@@ -19,50 +32,6 @@ const PHASE_LABEL: Record<string, string> = {
   done: 'Done'
 }
 
-/** Copy button with inline "Copied ✓" feedback. */
-function CopyButton({ text, label }: { text: string; label: string }): React.JSX.Element {
-  const toast = useToast()
-  const [copied, setCopied] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout>>()
-  return (
-    <button
-      className={`pill pill-primary${copied ? ' copied' : ''}`}
-      onClick={() => {
-        window.specdrive.copyToClipboard(text)
-        toast('Prompt copied — paste it into your AI agent')
-        setCopied(true)
-        if (timer.current) clearTimeout(timer.current)
-        timer.current = setTimeout(() => setCopied(false), 1600)
-      }}
-    >
-      {copied ? (
-        <>
-          <TickIcon size={12} />
-          Copied
-        </>
-      ) : (
-        <>
-          <CopyIcon />
-          {label}
-        </>
-      )}
-    </button>
-  )
-}
-
-/** The raw prompt text, collapsed behind a disclosure — closed by default so
- *  a non-technical owner isn't confronted with a wall of instructions. */
-function PromptPeek({ text }: { text: string }): React.JSX.Element {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <button className="disclosure" onClick={() => setOpen((o) => !o)}>
-        {open ? 'Hide what gets pasted ▾' : 'See what gets pasted ▸'}
-      </button>
-      {open && <div className="prompt-peek">{text}</div>}
-    </>
-  )
-}
 
 function useMcpInfo(): McpInfo | undefined {
   const [info, setInfo] = useState<McpInfo>()
@@ -136,32 +105,123 @@ function LiveSessionCard({ sessions }: { sessions: LiveSession[] }): React.JSX.E
   )
 }
 
+
+/** The build, seen from the rail: how far the ordered list has got, the step
+ *  running now, and the handful that come next — with their sub-steps counted,
+ *  because a block is done only when its parts are. */
+function BuildLadder({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
+  const roots = bundle.tasks.filter((t) => !t.parentId).sort((a, b) => a.order - b.order)
+  const kidsOf = (id: string): ProjectBundle['tasks'] => bundle.tasks.filter((t) => t.parentId === id)
+  const stateOf = (t: ProjectBundle['tasks'][number]): string => {
+    if (t.status === 'done') return t.stale ? 'recheck' : 'done'
+    if (t.status === 'in_progress') return 'current'
+    if (t.status === 'failed' || t.status === 'blocked') return 'stuck'
+    if (t.status === 'deferred') return 'parked'
+    return ''
+  }
+  const doneCount = roots.filter((t) => t.status === 'done' && !t.stale).length
+  const runningIdx = roots.findIndex((t) => t.status === 'in_progress')
+  const nextIdx = roots.findIndex((t) => t.status === 'todo')
+  const focus = runningIdx >= 0 ? runningIdx : nextIdx >= 0 ? nextIdx : roots.length - 1
+  // A window around where we are: enough to see the road, never the whole list.
+  const from = Math.max(0, Math.min(focus - 2, roots.length - 6))
+  const shown = roots.slice(from, from + 6)
+
+  return (
+    <div className="build-ladder">
+      <div className="ladder-head">
+        <span className="rail-mini-label">The build, step by step</span>
+        <span className="ladder-count">
+          {doneCount} of {roots.length} done
+        </span>
+      </div>
+      {from > 0 && <p className="ladder-more">{from} step{from > 1 ? 's' : ''} before this</p>}
+      <ol className="ladder">
+        {shown.map((t) => {
+          const kids = kidsOf(t.id)
+          const doneKids = kids.filter((k) => k.status === 'done').length
+          const st = stateOf(t)
+          return (
+            <li key={t.id} className={`ladder-step ${st}`}>
+              <span className="ladder-bullet">{st === 'done' && <TickIcon size={9} />}</span>
+              <span className="ladder-body">
+                <span className="ladder-title">
+                  {roots.indexOf(t) + 1}. {t.title}
+                </span>
+                {kids.length > 0 && (
+                  <span className="ladder-sub">
+                    {doneKids} of {kids.length} sub-step{kids.length > 1 ? 's' : ''} done
+                  </span>
+                )}
+                {st === 'current' && <span className="ladder-sub running">running now</span>}
+                {st === 'stuck' && <span className="ladder-sub warn">needs you</span>}
+                {st === 'recheck' && <span className="ladder-sub warn">needs a re-check</span>}
+                {st === 'parked' && <span className="ladder-sub warn">set aside</span>}
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+      {from + 6 < roots.length && (
+        <p className="ladder-more">{roots.length - from - 6} more after that</p>
+      )}
+    </div>
+  )
+}
+
 /** Right rail: always-visible guidance — where you are, what to do next. */
+/** What the rail shows when a HOUSE (folder) is open instead of a project. */
+export type FolderView = { kind: 'new' } | { kind: 'existing'; folder: Folder }
+
 export function GuideRail({
   bundle,
-  open = true,
-  onToggle
+  folderView = null
 }: {
   bundle: ProjectBundle | null
-  open?: boolean
-  onToggle?: () => void
+  /** A folder screen is open — the rail hands over the folder prompt instead */
+  folderView?: FolderView | null
 }): React.JSX.Element {
   const toast = useToast()
   const sessions = useLiveSessions()
   const mcp = useMcpInfo()
   const [startMode, setStartMode] = useState<'new' | 'existing'>('new')
 
+  if (folderView) {
+    const isNew = folderView.kind === 'new'
+    const text = isNew
+      ? fillFolderPrompt(FOLDER_PROMPT, '', mcp)
+      : fillFolderPrompt(FOLDER_REVIEW_PROMPT, folderView.folder.name, mcp)
+    return (
+      <aside className="rail">
+        <div className="rail-drag" />
+        <div className="rail-body">
+          <LiveSessionCard sessions={sessions} />
+          <div className="next-step">
+            <span className="rail-mini-label">{isNew ? 'A new house' : 'House rules'}</span>
+            <h2>{isNew ? 'Set it up with your agent' : 'Go through the rules with your agent'}</h2>
+            <p className="how">
+              {isNew
+                ? 'Copy this prompt, paste it into a connected AI agent, and just talk about the company, client or team: it proposes the rules, creates the folder and places your projects in it. You can also write the rules yourself on the left.'
+                : 'Copy this prompt and paste it into your agent: it walks every rule with you, tightens the wording, adds what this house is missing, and saves it here. Or edit the rules directly on the left.'}
+            </p>
+            <CopyButton text={text} label={isNew ? 'Copy the set-up prompt' : 'Copy the review prompt'} />
+            <PromptPeek text={text} />
+            <p className="how faded" style={{ marginTop: 14 }}>
+              Every project inside a house follows its rules in every step. Houses can live inside
+              other houses — a company, then its teams — and the rules stack down the line. Drag a
+              project, or a whole house, onto another house in the sidebar to move it in.
+            </p>
+          </div>
+        </div>
+      </aside>
+    )
+  }
+
   if (!bundle) {
     const starter = startMode === 'new' ? START_PROMPT : ADOPT_PROMPT
     return (
       <aside className="rail">
         <div className="rail-drag" />
-      <button className="rail-handle" title={open ? 'Hide the guide' : 'Show the guide'} aria-label={open ? 'Hide guide' : 'Show guide'} onClick={onToggle}>
-        {open ? '›' : '‹'}
-      </button>
-      <button className="rail-handle" title={open ? 'Hide the guide' : 'Show the guide'} aria-label={open ? 'Hide guide' : 'Show guide'} onClick={onToggle}>
-        {open ? '›' : '‹'}
-      </button>
         <div className="rail-body">
           <LiveSessionCard sessions={sessions} />
           <div className="next-step">
@@ -238,6 +298,11 @@ export function GuideRail({
           <span className="big">{PHASE_LABEL[project.phase]}</span>
         </div>
 
+        {/* Once the build starts, the six phases stop being the story: what
+            matters is the ordered list of steps and where it stands. */}
+        {world === 'build' && bundle.tasks.length > 0 ? (
+          <BuildLadder bundle={bundle} />
+        ) : (
         <div className="vstepper">
           {PHASES.filter((p) => p !== 'done').map((p, i, arr) => {
             const idx = PHASES.indexOf(p)
@@ -261,6 +326,7 @@ export function GuideRail({
             )
           })}
         </div>
+        )}
 
         <div className="rail-divider" />
 
@@ -280,6 +346,24 @@ export function GuideRail({
           )}
           <CopyButton text={fillPrompt(phasePrompt.prompt, project.name, undefined, mcp)} label="Copy the prompt" />
           <PromptPeek text={fillPrompt(phasePrompt.prompt, project.name, undefined, mcp)} />
+        </div>
+
+        {/* The specs are never closed: whatever the phase, the owner can pick
+            them back up and have the agent propose improvements. */}
+        <div className="rail-divider" />
+        <div className="next-step quiet">
+          <span className="rail-mini-label">Any time</span>
+          <h2>Come back to the specs</h2>
+          <p className="how">
+            Your agent re-reads the whole board, catches you up, then proposes what to add or fix — no
+            questionnaire, and nothing gets built.
+          </p>
+          <CopyButton
+            text={fillPrompt(REFINE_SPECS_PROMPT, project.name, undefined, mcp)}
+            label="Copy the specs prompt"
+            quiet
+          />
+          <PromptPeek text={fillPrompt(REFINE_SPECS_PROMPT, project.name, undefined, mcp)} />
         </div>
 
         {project.phase === 'build' && (

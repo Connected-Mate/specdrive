@@ -1,6 +1,6 @@
 {
   "name": "specdrive",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "SpecDrive — spec-driven development, made visual and effortless for everyone",
   "main": "out/main/index.js",
   "type": "module",
@@ -16,7 +16,7 @@
     "dist": "electron-vite build && npm run build:mcp && electron-builder --mac",
     "release": "electron-vite build && npm run build:mcp && electron-builder --mac --publish always",
     "install:app": "zsh scripts/install-app.sh",
-    "test": "node --test test/mcp.test.mjs"
+    "test": "node --test test/mcp.test.mjs test/agents.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

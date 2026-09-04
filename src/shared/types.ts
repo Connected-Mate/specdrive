@@ -22,6 +22,7 @@ export type SpecCategory =
   | 'data'
   | 'research'
   | 'risks'
+  | 'business'
   | 'decisions'
 
 export const SPEC_CATEGORIES: SpecCategory[] = [
@@ -33,6 +34,7 @@ export const SPEC_CATEGORIES: SpecCategory[] = [
   'data',
   'research',
   'risks',
+  'business',
   'decisions'
 ]
 
@@ -119,7 +121,17 @@ export interface Task {
   /** Result of the server-run check at 'done' */
   proofRun?: { command: string; exitCode: number | null; durationMs: number; timedOut?: boolean; outputTail: string; ranAt: string }
   /** Why no runnable check exists for this step */
-  proofRunSkipped?: string
+  proofRunSkipped?: { reason: string; at: string } | string
+  /** Git ref when the step started — the baseline for "what changed" */
+  startedRef?: string
+  /** Files git saw change between start and done (evidence, capped) */
+  changedFiles?: { files: string[]; total: number; at: string }
+  /** Which session marked it done — a review by the builder's own session is refused */
+  doneBy?: { pid: number; client: string; at: string }
+  /** One result per linked spec that carries an acceptance scenario */
+  acceptanceResults?: { specId: string; title: string; result: 'pass' | 'fail' | 'not_testable'; how: string; at: string }[]
+  /** When rerun_checks last ran this step's command */
+  lastRerunAt?: string
   /** When it was set aside after repeated failures */
   deferredAt?: string
   createdAt: string
@@ -246,14 +258,40 @@ export interface FolderRule {
 }
 
 /** A folder above projects: standing house rules (company charter, compliance…)
- *  that every project placed inside must honor, in every phase. */
+ *  that every project placed inside must honor, in every phase.
+ *
+ *  Houses NEST: `parentId` puts this house inside another one (SNCF → SNCF
+ *  Marketing → its projects). A project inherits the rules of every house
+ *  above it; the closest house wins when two rules share a name. All of that
+ *  logic lives in one place — src/shared/house-chain.mjs. */
 export interface Folder {
   id: string
   name: string
   description?: string
+  /** The house this one lives inside, if any — its rules apply here too */
+  parentId?: string
   rules: FolderRule[]
   createdAt: string
   updatedAt: string
+}
+
+/** One area of the product the agent decided this SHAPE of product must have
+ *  an answer for (business model, platform rules, auth, payments…). The agent
+ *  derives the list itself from the project's shape; the board tracks whether
+ *  the specs actually cover it. */
+export interface RequiredArea {
+  /** Slug, e.g. "business-model", "platform-rules" — specs join it via the tag `area:<slug>` */
+  area: string
+  /** Plain-words label for the owner; falls back to a prettified slug */
+  label?: string
+  /** One plain sentence: why this product cannot ship without an answer here */
+  why: string
+  /** Recomputed by the server from the specs, except "n/a" which the agent sets */
+  status: 'empty' | 'partial' | 'covered' | 'n/a'
+  /** Specs tagged `area:<slug>` that answer it */
+  specIds?: string[]
+  /** Required when status is "n/a": why this area genuinely does not apply here */
+  note?: string
 }
 
 export interface Project {
@@ -262,6 +300,11 @@ export interface Project {
   oneLiner: string
   /** The user's raw idea, as dictated to the agent */
   idea: string
+  /** What KIND of product this is — "ios-app", "web-saas", "marketplace"… The
+   *  agent names it, and derives the required areas below from it. */
+  shape?: string
+  /** The checklist of areas this product must answer, derived by the agent */
+  requiredAreas?: RequiredArea[]
   /** "new" (default) = blank-page idea; "existing" = the app already exists, code is ground truth */
   mode?: 'new' | 'existing'
   /** For existing apps: where the code lives */
@@ -294,6 +337,9 @@ export interface ProjectBundle {
   activity: ActivityEntry[]
   /** The folder the project belongs to, if any — resolved by the app */
   folder?: Folder | null
+  /** The whole line of houses above the project, [root … its own house].
+   *  Empty when the project lives on its own. */
+  houseChain?: Folder[]
   /** Owner comments on cards — written by the app, resolved by the agent via MCP */
   comments?: OwnerComment[]
   /** Has the codebase moved since the last verified build step? null = unknown/not applicable */
@@ -361,6 +407,37 @@ export interface AgentVerification {
   checkedAt: string
 }
 
+// ---------- App preferences (~/.specdrive/settings.json) ----------
+
+export interface AppSettings {
+  /** Write the generated AGENTS.md into the code folder of projects that have
+   *  never been told either way. The per-project toggle always wins. */
+  agentsMdForNewProjects: boolean
+  /** Show a macOS notification when a milestone happens while the app is away. */
+  notifications: boolean
+}
+
+/** What the Settings screen shows about this build and where its data lives. */
+export interface AboutInfo {
+  version: string
+  dataDir: string
+  serverPath: string
+  nodeBin: string
+}
+
+/** One thing waiting on the owner, anywhere on the board. */
+export interface WaitingItem {
+  id: string
+  projectId: string
+  projectName: string
+  kind: 'question' | 'blocked' | 'deferred' | 'failed'
+  title: string
+  detail: string
+  suggestion?: string
+  target: OwnerComment['target']
+  since: string
+}
+
 // ---------- IPC contract (preload bridge) ----------
 
 export interface SpecDriveApi {
@@ -388,8 +465,46 @@ export interface SpecDriveApi {
   addComment(projectId: string, target: OwnerComment['target'], text: string): Promise<string>
   /** Turn the generated AGENTS.md export for this project's code folder on/off. */
   setSyncAgentsMd(projectId: string, on: boolean): Promise<void>
-  /** Export the whole project as a standalone HTML page (save dialog) */
-  exportProject(projectId: string): Promise<string | null>
+  /** Reveal this project's own files (~/.specdrive/projects/<id>) in the Finder */
+  revealProject(projectId: string): Promise<void>
+  /** Re-run every finished step's own check, right now, and report in plain words */
+  rerunChecks(projectId: string): Promise<{ ok: boolean; message: string; ran: number; failed: number }>
+  /** Everything across every project that only the owner can unblock */
+  listWaiting(): Promise<WaitingItem[]>
+  // ----- house folders (the owner's side of what agents do over MCP) -----
+  listFolders(): Promise<Folder[]>
+  /** Returns the new folder's id, or an error string to show the owner.
+   *  `parentId` puts the new house inside an existing one. */
+  createFolder(
+    name: string,
+    description: string,
+    rules: FolderRule[],
+    presets: string[],
+    parentId?: string | null
+  ): Promise<{ id: string; error: string }>
+  /** Rename a folder, change its description, or move it into another house. '' on success. */
+  updateFolder(
+    id: string,
+    patch: { name?: string; description?: string; parentId?: string | null }
+  ): Promise<string>
+  /** Move a house inside another one, or pass null to bring it back to the top. '' on success. */
+  moveFolder(id: string, parentId: string | null): Promise<string>
+  /** Replace a folder's house rules with the complete list. '' on success. */
+  setFolderRules(id: string, rules: FolderRule[]): Promise<string>
+  /** Moves everything inside it up one level first — sub-houses and projects go
+   *  to this house's own parent — then deletes it. '' on success. */
+  deleteFolder(id: string): Promise<string>
+  /** Put a project in a folder, or pass null to take it out. '' on success. */
+  assignProjectFolder(projectId: string, folderId: string | null): Promise<string>
+  // ----- preferences, updates and data location -----
+  getSettings(): Promise<AppSettings>
+  setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+  getAbout(): Promise<AboutInfo>
+  /** Runs the same "Check for Updates…" the menu does; resolves with the answer
+   *  in one plain sentence, so the screen keeps it after the dialog is gone. */
+  checkForUpdates(): Promise<string>
+  /** Reveal ~/.specdrive (or the MCP server file) in the Finder */
+  revealInFinder(what: 'data' | 'server'): Promise<void>
   /** Subscribe to live project changes; returns unsubscribe */
   onProjectsChanged(cb: () => void): () => void
   /** Fullscreen toggles hide/show the traffic lights; returns unsubscribe */

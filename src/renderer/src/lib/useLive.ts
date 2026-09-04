@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { DetectedAgent, LiveSession, ProjectBundle } from '@shared/types'
+import type { DetectedAgent, Folder, LiveSession, ProjectBundle } from '@shared/types'
 
 /** All projects, refreshed live whenever the MCP server writes to disk. */
 export function useProjects(): { projects: ProjectBundle[]; loaded: boolean } {
@@ -95,4 +95,34 @@ export function timeAgo(iso: string): string {
   if (s < 3600) return `${Math.floor(s / 60)} min ago`
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+/** The house folders, refreshed live whenever anything under ~/.specdrive
+ *  changes — an agent creating a folder over MCP shows up without a reload. */
+export function useFolders(): { folders: Folder[]; refresh: () => void } {
+  const [folders, setFolders] = useState<Folder[]>([])
+  const refresh = useCallback(() => {
+    window.specdrive
+      .listFolders()
+      .then(setFolders)
+      .catch((err) => console.error('listFolders failed:', err))
+  }, [])
+  useEffect(() => {
+    refresh()
+    return window.specdrive.onProjectsChanged(refresh)
+  }, [refresh])
+  return { folders, refresh }
+}
+
+/** Where the MCP server lives on this Mac — every copy-paste prompt embeds it
+ *  so the owner's agent can connect SpecDrive to itself, with nothing to type. */
+export function useMcpInfo(): { serverPath: string; nodeBin: string } | undefined {
+  const [info, setInfo] = useState<{ serverPath: string; nodeBin: string }>()
+  useEffect(() => {
+    window.specdrive
+      .getMcpInfo()
+      .then(setInfo)
+      .catch(() => {})
+  }, [])
+  return info
 }

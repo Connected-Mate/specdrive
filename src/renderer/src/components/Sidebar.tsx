@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
-import type { AgentVerification, DetectedAgent, Folder, ProjectBundle } from '@shared/types'
+import type { DetectedAgent, Folder, ProjectBundle } from '@shared/types'
 import { useToast } from './Toast'
 import { PHASE_COLOR } from '@/lib/phaseColors'
-import { SidebarIcon } from './Icons'
-import { ruleProvenance } from '@/lib/labels'
-import { timeAgo } from '@/lib/useLive'
+import { FolderIcon, FolderPlusIcon, GearIcon, PlusIcon } from './Icons'
+import { timeAgo, useFolders } from '@/lib/useLive'
+import { canParent, chainLabel, houseChain } from '@shared/house-chain.mjs'
+import { AgentsPanel } from './AgentsPanel'
 
 const PHASE_SHORT: Record<string, string> = {
   capture: 'Capturing idea',
@@ -16,41 +17,10 @@ const PHASE_SHORT: Record<string, string> = {
   done: 'Built'
 }
 
-/** Config path + launch command — technical detail, collapsed behind a disclosure
- *  so the plain-words status line and Test now button stay the focus. */
-function AdvancedMeta({
-  configPath,
-  command,
-  args
-}: {
-  configPath?: string
-  command?: string
-  args?: string[]
-}): React.JSX.Element | null {
-  const [open, setOpen] = useState(false)
-  if (!configPath && !command) return null
-  return (
-    <>
-      <button className="disclosure" onClick={() => setOpen((o) => !o)}>
-        {open ? 'Advanced ▾' : 'Advanced ▸'}
-      </button>
-      {open && (
-        <>
-          {configPath && (
-            <p className="ad-meta">
-              Config: <code>{configPath.replace(/^\/Users\/[^/]+/, '~')}</code>
-            </p>
-          )}
-          {command && (
-            <p className="ad-meta">
-              Launches: <code>{command} {(args ?? []).join(' ')}</code>
-            </p>
-          )}
-        </>
-      )}
-    </>
-  )
-}
+const DRAG_TYPE = 'application/x-specdrive-project'
+// Houses nest, so a house is draggable too: drop it on another house to put it
+// inside, or on the "take it out" strip to bring it back to the top level.
+const FOLDER_DRAG_TYPE = 'application/x-specdrive-folder'
 
 export function Sidebar({
   projects,
@@ -59,7 +29,11 @@ export function Sidebar({
   onSelect,
   connect,
   onEgg,
-  onToggleSide
+  onToggleSide,
+  onOpenSettings,
+  settingsOpen,
+  onOpenFolder,
+  activeFolderId
 }: {
   projects: ProjectBundle[]
   agents: DetectedAgent[]
@@ -68,56 +42,328 @@ export function Sidebar({
   connect: (id: DetectedAgent['id']) => Promise<void>
   onEgg: () => void
   onToggleSide: () => void
+  onOpenSettings: () => void
+  settingsOpen: boolean
+  /** Open a house page: an existing folder's id, or 'new' for a blank one */
+  onOpenFolder: (id: string | 'new') => void
+  activeFolderId: string | 'new' | null
 }): React.JSX.Element {
   const toast = useToast()
-  const [busy, setBusy] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-  const [openAgent, setOpenAgent] = useState<DetectedAgent['id'] | 'other' | null>(null)
-  const [openRules, setOpenRules] = useState<string | null>(null)
-  const [checks, setChecks] = useState<Record<string, AgentVerification | 'checking'>>({})
-  const [mcp, setMcp] = useState<{ serverPath: string; nodeBin: string }>()
-  useEffect(() => {
-    window.specdrive.getMcpInfo().then(setMcp).catch(() => {})
-  }, [])
-  const copyGenericConfig = (): void => {
-    const snippet = JSON.stringify(
-      {
-        mcpServers: {
-          specdrive: { command: mcp?.nodeBin ?? 'node', args: [mcp?.serverPath ?? '~/.specdrive/mcp/server.mjs'] }
-        }
-      },
-      null,
-      2
-    )
-    window.specdrive.copyToClipboard(snippet)
-    toast('Setup copied — paste it into your AI tool’s settings')
-  }
+  const [confirmDeleteFolder, setConfirmDeleteFolder] = useState<string | null>(null)
+  // Which project's "put it in a folder" menu is open, if any.
+  const [movingId, setMovingId] = useState<string | null>(null)
+  // Drag and drop: what is being dragged (a project or a whole house), and the
+  // folder under the pointer.
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragFolderId, setDragFolderId] = useState<string | null>(null)
+  const [overFolder, setOverFolder] = useState<string | 'none' | null>(null)
+  const { folders } = useFolders()
+  const readFolder = (id: string): Folder | null => folders.find((f) => f.id === id) ?? null
 
-  const runCheck = async (id: DetectedAgent['id']): Promise<void> => {
-    setChecks((c) => ({ ...c, [id]: 'checking' }))
-    try {
-      const v = await window.specdrive.verifyAgent(id)
-      setChecks((c) => ({ ...c, [id]: v }))
-    } catch {
-      setChecks((c) => ({
-        ...c,
-        [id]: { ok: false, detail: 'Check failed to run.', checkedAt: new Date().toISOString() }
-      }))
-    }
-  }
   useEffect(() => {
     if (!confirmDelete) return
     const t = setTimeout(() => setConfirmDelete(null), 3500)
     return () => clearTimeout(t)
   }, [confirmDelete])
-  const installed = agents.filter((a) => a.installed)
+
+  useEffect(() => {
+    if (!confirmDeleteFolder) return
+    const t = setTimeout(() => setConfirmDeleteFolder(null), 3500)
+    return () => clearTimeout(t)
+  }, [confirmDeleteFolder])
+
+  // The move menu is a light popover: any click elsewhere closes it.
+  useEffect(() => {
+    if (!movingId) return
+    const close = (): void => setMovingId(null)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [movingId])
+
+  const moveTo = async (b: ProjectBundle, folderId: string | null): Promise<void> => {
+    setMovingId(null)
+    if ((b.project.folderId ?? null) === folderId) return
+    const err = await window.specdrive.assignProjectFolder(b.project.id, folderId)
+    if (err) {
+      toast(err)
+      return
+    }
+    const target = folderId ? folders.find((f) => f.id === folderId) : null
+    toast(
+      target
+        ? `“${b.project.name}” moved into ${target.name} — its house rules now apply`
+        : `“${b.project.name}” is on its own again`
+    )
+  }
+
+  /** Move a whole house inside another one (or back to the top level). */
+  const moveHouse = async (house: Folder, parentId: string | null): Promise<void> => {
+    if ((house.parentId ?? null) === parentId) return
+    const err = await window.specdrive.moveFolder(house.id, parentId)
+    if (err) {
+      toast(err)
+      return
+    }
+    const target = parentId ? readFolder(parentId) : null
+    toast(
+      target
+        ? `“${house.name}” now lives inside ${target.name} — its rules apply here too`
+        : `“${house.name}” is a house of its own again`
+    )
+  }
+
+  const dropOn = (folderId: string | null) => (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const houseId = e.dataTransfer.getData(FOLDER_DRAG_TYPE) || dragFolderId
+    const id = e.dataTransfer.getData(DRAG_TYPE) || (houseId ? '' : dragId)
+    setOverFolder(null)
+    setDragId(null)
+    setDragFolderId(null)
+    if (houseId) {
+      const house = readFolder(houseId)
+      if (house) void moveHouse(house, folderId)
+      return
+    }
+    const b = projects.find((p) => p.project.id === id)
+    if (b) void moveTo(b, folderId)
+  }
+  const dragOver = (key: string | 'none') => (e: React.DragEvent) => {
+    if (!dragId && !dragFolderId) return
+    // A house cannot be dropped into itself or into one of its own sub-houses.
+    if (dragFolderId && key !== 'none' && canParent(dragFolderId, key, readFolder, folders)) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    if (overFolder !== key) setOverFolder(key)
+  }
+
+  // Houses nest, so the sidebar is a TREE: sub-houses inside their house,
+  // projects under the house they belong to, loose projects at the bottom.
+  const known = new Set(folders.map((f) => f.id))
+  const childHouses = new Map<string | null, Folder[]>()
+  for (const f of folders) {
+    const parent = f.parentId && known.has(f.parentId) ? f.parentId : null
+    const list = childHouses.get(parent) ?? []
+    list.push(f)
+    childHouses.set(parent, list)
+  }
+  const houseProjects = new Map<string, ProjectBundle[]>()
+  const loose: ProjectBundle[] = []
+  for (const b of projects) {
+    const fid = b.project.folderId
+    if (fid && known.has(fid)) {
+      const list = houseProjects.get(fid) ?? []
+      list.push(b)
+      houseProjects.set(fid, list)
+    } else loose.push(b)
+  }
+  const dragged = dragId ? projects.find((p) => p.project.id === dragId) : undefined
+  const draggedHouse = dragFolderId ? readFolder(dragFolderId) : null
+
+  let i = 0
+  const projectRow = (b: ProjectBundle, depth = 0): React.JSX.Element => {
+    const done = b.tasks.filter((t) => t.status === 'done').length
+    const confirming = confirmDelete === b.project.id
+    const idx = i++
+    return (
+      <div
+        key={b.project.id}
+        role="button"
+        tabIndex={0}
+        draggable
+        className={`side-item${openId === b.project.id ? ' active' : ''}${movingId === b.project.id ? ' picking' : ''}${dragId === b.project.id ? ' dragging' : ''}`}
+        style={{ '--i': idx, '--depth': depth } as React.CSSProperties}
+        onClick={() => onSelect(b.project.id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') onSelect(b.project.id)
+        }}
+        onDragStart={(e) => {
+          e.dataTransfer.setData(DRAG_TYPE, b.project.id)
+          e.dataTransfer.effectAllowed = 'move'
+          setDragId(b.project.id)
+          setMovingId(null)
+        }}
+        onDragEnd={() => {
+          setDragId(null)
+          setOverFolder(null)
+        }}
+      >
+        <span className="name">{b.project.name}</span>
+        <span className="sub">
+          <span
+            className="phase-dot"
+            style={{ '--phase-color': PHASE_COLOR[b.project.phase] } as React.CSSProperties}
+          />
+          {PHASE_SHORT[b.project.phase]}
+          {b.tasks.length > 0 && ` · ${done}/${b.tasks.length}`}
+          {' · '}
+          {timeAgo(b.project.updatedAt)}
+        </span>
+        <button
+          className="side-move"
+          aria-label={`Move ${b.project.name} to a folder`}
+          title="Put this project in a folder"
+          onClick={(e) => {
+            e.stopPropagation()
+            setMovingId(movingId === b.project.id ? null : b.project.id)
+          }}
+        >
+          <FolderIcon />
+        </button>
+        {movingId === b.project.id && (
+          <div className="side-picker" onClick={(e) => e.stopPropagation()}>
+            <p className="side-picker-title">Put this project in…</p>
+            {folders.map((f) => (
+              <button
+                key={f.id}
+                className={`side-picker-row${b.project.folderId === f.id ? ' current' : ''}`}
+                onClick={() => moveTo(b, f.id)}
+              >
+                <span className="side-picker-name">
+                  {chainLabel(houseChain(f.id, readFolder), ' › ')}
+                </span>
+                {f.rules.length > 0 && (
+                  <span className="side-picker-count">
+                    {f.rules.length} rule{f.rules.length > 1 ? 's' : ''}
+                  </span>
+                )}
+              </button>
+            ))}
+            {b.project.folderId && (
+              <button className="side-picker-row" onClick={() => moveTo(b, null)}>
+                <span className="side-picker-name">No folder</span>
+              </button>
+            )}
+            <button
+              className="side-picker-row new"
+              onClick={() => {
+                setMovingId(null)
+                onOpenFolder('new')
+              }}
+            >
+              <span className="side-picker-name">+ New folder…</span>
+            </button>
+            <div className="side-picker-sep" />
+            <button
+              className="side-picker-row quiet"
+              onClick={() => {
+                setMovingId(null)
+                window.specdrive.revealProject(b.project.id)
+              }}
+            >
+              <span className="side-picker-name">Show its files in Finder</span>
+            </button>
+          </div>
+        )}
+        <button
+          className={`side-delete${confirming ? ' confirming' : ''}`}
+          aria-label={confirming ? `Really delete ${b.project.name}` : `Delete ${b.project.name}`}
+          onClick={async (e) => {
+            e.stopPropagation()
+            if (!confirming) {
+              setConfirmDelete(b.project.id)
+              return
+            }
+            setConfirmDelete(null)
+            await window.specdrive.deleteProject(b.project.id)
+            if (openId === b.project.id) onSelect(null)
+            toast(`"${b.project.name}" moved to SpecDrive's trash`)
+          }}
+        >
+          {confirming ? 'Sure?' : '✕'}
+        </button>
+      </div>
+    )
+  }
+
+  /** One house and everything under it — sub-houses first, then its projects. */
+  const houseBranch = (folder: Folder, depth: number): React.JSX.Element => {
+    const kids = childHouses.get(folder.id) ?? []
+    const items = houseProjects.get(folder.id) ?? []
+    const refused = dragFolderId ? canParent(dragFolderId, folder.id, readFolder, folders) : ''
+    return (
+      <div
+        key={folder.id}
+        className={`side-folder${activeFolderId === folder.id ? ' active' : ''}${overFolder === folder.id ? ' drop-over' : ''}${depth ? ' nested' : ''}${confirmDeleteFolder === folder.id ? ' confirming' : ''}`}
+        style={{ '--depth': depth } as React.CSSProperties}
+        onDragOver={dragOver(folder.id)}
+        onDragLeave={() => {
+          if (overFolder === folder.id) setOverFolder('none')
+        }}
+        onDrop={dropOn(folder.id)}
+      >
+        <button
+          className={`side-folder-head${dragFolderId === folder.id ? ' dragging' : ''}`}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(FOLDER_DRAG_TYPE, folder.id)
+            e.dataTransfer.effectAllowed = 'move'
+            setDragFolderId(folder.id)
+            setMovingId(null)
+          }}
+          onDragEnd={() => {
+            setDragFolderId(null)
+            setOverFolder(null)
+          }}
+          onClick={() => onOpenFolder(folder.id)}
+          title={
+            dragFolderId && refused
+              ? refused
+              : folder.description || 'Open this house and its rules — drag it onto another house to nest it'
+          }
+        >
+          <span className="side-folder-icon">
+            <FolderIcon size={12} />
+          </span>
+          <span className="side-folder-name">{folder.name}</span>
+          <span className="side-folder-rules">
+            {folder.rules.length === 0 ? 'no rules' : `${folder.rules.length} rule${folder.rules.length > 1 ? 's' : ''}`}
+          </span>
+        </button>
+        <button
+          className={`side-folder-delete${confirmDeleteFolder === folder.id ? ' confirming' : ''}`}
+          aria-label={confirmDeleteFolder === folder.id ? `Really delete ${folder.name}` : `Delete ${folder.name}`}
+          title="Delete this house — what is inside moves up, nothing is lost"
+          onClick={async (e) => {
+            e.stopPropagation()
+            if (confirmDeleteFolder !== folder.id) {
+              setConfirmDeleteFolder(folder.id)
+              return
+            }
+            setConfirmDeleteFolder(null)
+            const inside = projects.filter((b) => b.project.folderId === folder.id).length
+            const subs = folders.filter((f) => f.parentId === folder.id).length
+            const err = await window.specdrive.deleteFolder(folder.id)
+            if (err) {
+              toast(err)
+              return
+            }
+            if (activeFolderId === folder.id) onSelect(null)
+            const moved = [
+              inside ? `${inside} project${inside > 1 ? 's' : ''}` : '',
+              subs ? `${subs} house${subs > 1 ? 's' : ''}` : ''
+            ].filter(Boolean)
+            toast(moved.length ? `“${folder.name}” deleted — ${moved.join(' and ')} moved up` : `“${folder.name}” deleted`)
+          }}
+        >
+          {confirmDeleteFolder === folder.id ? 'Sure?' : '✕'}
+        </button>
+        {kids.map((k) => houseBranch(k, depth + 1))}
+        {items.map((b) => projectRow(b, depth + 1))}
+        {kids.length === 0 && items.length === 0 && (
+          <p className="side-folder-empty" style={{ '--depth': depth + 1 } as React.CSSProperties}>
+            {dragId ? 'Drop it here' : 'Empty — drag a project in'}
+          </p>
+        )}
+      </div>
+    )
+  }
 
   return (
     <aside className="sidebar">
       <div className="sidebar-drag" />
-      <button className="sidebar-hide" title="Hide the sidebar (⌘\\)" aria-label="Hide sidebar" onClick={onToggleSide}>
-        <SidebarIcon />
-      </button>
       <button className="sidebar-brand" onClick={() => onSelect(null)} onDoubleClick={onEgg}>
         <span className="brand-stamp">
           SpecDrive
@@ -136,236 +382,66 @@ export function Sidebar({
         </span>
       </button>
 
-      <div className="sidebar-label">Projects</div>
-      <div className="sidebar-projects">
-        {(() => {
-          const groups = new Map<string, { folder: Folder; items: ProjectBundle[] }>()
-          const loose: ProjectBundle[] = []
-          for (const b of projects) {
-            if (b.folder) {
-              const g = groups.get(b.folder.id) ?? { folder: b.folder, items: [] }
-              g.items.push(b)
-              groups.set(b.folder.id, g)
-            } else loose.push(b)
-          }
-          let i = 0
-          const projectRow = (b: ProjectBundle): React.JSX.Element => {
-            const done = b.tasks.filter((t) => t.status === 'done').length
-            const confirming = confirmDelete === b.project.id
-            const idx = i++
-            return (
-              <div
-                key={b.project.id}
-                role="button"
-                tabIndex={0}
-                className={`side-item${openId === b.project.id ? ' active' : ''}`}
-                style={{ '--i': idx } as React.CSSProperties}
-                onClick={() => onSelect(b.project.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') onSelect(b.project.id)
-                }}
-              >
-                <span className="name">{b.project.name}</span>
-                <span className="sub">
-                  <span
-                    className="phase-dot"
-                    style={{ '--phase-color': PHASE_COLOR[b.project.phase] } as React.CSSProperties}
-                  />
-                  {PHASE_SHORT[b.project.phase]}
-                  {b.tasks.length > 0 && ` · ${done}/${b.tasks.length}`}
-                  {' · '}
-                  {timeAgo(b.project.updatedAt)}
-                </span>
-                <button
-                  className="side-export"
-                  aria-label={`Export ${b.project.name}`}
-                  title="Export as a web page (printable to PDF)"
-                  onClick={async (e) => {
-                    e.stopPropagation()
-                    const path = await window.specdrive.exportProject(b.project.id)
-                    if (path) toast('Project exported — open the file and print to PDF if you like')
-                  }}
-                >
-                  ↗
-                </button>
-                <button
-                  className={`side-delete${confirming ? ' confirming' : ''}`}
-                  aria-label={confirming ? `Really delete ${b.project.name}` : `Delete ${b.project.name}`}
-                  onClick={async (e) => {
-                    e.stopPropagation()
-                    if (!confirming) {
-                      setConfirmDelete(b.project.id)
-                      return
-                    }
-                    setConfirmDelete(null)
-                    await window.specdrive.deleteProject(b.project.id)
-                    if (openId === b.project.id) onSelect(null)
-                    toast(`"${b.project.name}" moved to SpecDrive's trash`)
-                  }}
-                >
-                  {confirming ? 'Sure?' : '✕'}
-                </button>
-              </div>
-            )
-          }
-          return (
-            <>
-              {[...groups.values()].map(({ folder, items }) => (
-                <div key={folder.id} className="side-folder">
-                  <button
-                    className="side-folder-head"
-                    onClick={() => setOpenRules(openRules === folder.id ? null : folder.id)}
-                    title={folder.description}
-                  >
-                    <span className="side-folder-name">{folder.name}</span>
-                    {folder.rules.length > 0 && (
-                      <span className="side-folder-rules">
-                        {folder.rules.length} rule{folder.rules.length > 1 ? 's' : ''}
-                      </span>
-                    )}
-                  </button>
-                  {openRules === folder.id && folder.rules.length > 0 && (
-                    <div className="side-folder-detail">
-                      <p className="rule-intro">House rules — every project in this folder follows them:</p>
-                      {folder.rules.map((r) => {
-                        const prov = ruleProvenance(r)
-                        return (
-                          <p key={r.title} className="rule-line">
-                            • <strong>{r.title}</strong>
-                            {r.appliesTo && <span className="rule-scope"> only for {r.appliesTo}</span>} —{' '}
-                            {r.content}
-                            {prov && <span className="rule-provenance"> ({prov})</span>}
-                          </p>
-                        )
-                      })}
-                    </div>
-                  )}
-                  {items.map(projectRow)}
-                </div>
-              ))}
-              {loose.map(projectRow)}
-            </>
-          )
-        })()}
-        <button className="side-new" onClick={() => onSelect(null)}>
-          <span style={{ fontSize: 15, lineHeight: 1 }}>+</span> New project
-        </button>
+      <div className="sidebar-label-row">
+        <span className="sidebar-label">Projects</span>
+        <span className="sidebar-label-actions">
+          <button
+            className="sidebar-iconbtn"
+            title="New project"
+            aria-label="New project"
+            onClick={() => onSelect(null)}
+          >
+            <PlusIcon />
+          </button>
+          <button
+            className={`sidebar-iconbtn${activeFolderId === 'new' ? ' active' : ''}`}
+            title="New folder — a house with rules every project inside follows"
+            aria-label="New folder"
+            onClick={() => onOpenFolder('new')}
+          >
+            <FolderPlusIcon />
+          </button>
+        </span>
+      </div>
+
+      <div
+        className={`sidebar-projects${dragId ? ' dragging' : ''}${dragFolderId ? ' dragging-house' : ''}`}
+        onDragOver={dragOver('none')}
+        onDrop={dropOn(null)}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setOverFolder(null)
+        }}
+      >
+        {(childHouses.get(null) ?? []).map((f) => houseBranch(f, 0))}
+        {loose.map((b) => projectRow(b))}
+        {((dragId && dragged?.project.folderId) || (dragFolderId && draggedHouse?.parentId)) && (
+          <div className={`side-dropout${overFolder === 'none' ? ' drop-over' : ''}`}>
+            {dragFolderId ? 'Drop here to make it a house of its own' : 'Drop here to take it out of its folder'}
+          </div>
+        )}
+        {projects.length === 0 && folders.length === 0 && (
+          <p className="side-empty">No project yet. Copy the starter prompt on the right and tell your agent your idea.</p>
+        )}
       </div>
 
       <div className="sidebar-agents">
         <div className="sidebar-label" style={{ padding: '4px 10px 6px' }}>
           Your AI agents
         </div>
-        {installed.length === 0 && (
-          <div style={{ padding: '2px 10px 6px', fontSize: 11.5, color: 'var(--smoke)', lineHeight: 1.45 }}>
-            None found on this Mac yet. Install one (Claude Code, Cursor…) and relaunch SpecDrive — or
-            connect any other AI agent below.
-          </div>
-        )}
-        {installed.map((a, i) => (
-          <div key={a.id}>
-          <div
-            className="agent-row clickable"
-            style={{ '--i': i } as React.CSSProperties}
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              const next = openAgent === a.id ? null : a.id
-              setOpenAgent(next)
-              if (next && a.connected && !checks[a.id]) runCheck(a.id)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') setOpenAgent(openAgent === a.id ? null : a.id)
-            }}
-          >
-            <span className={`dot${a.connected ? ' on' : ''}`} />
-            <span className="name">{a.name}</span>
-            {!a.connected && (
-              <button
-                className="link"
-                disabled={busy === a.id}
-                onClick={async (e) => {
-                  e.stopPropagation()
-                  setBusy(a.id)
-                  try {
-                    await connect(a.id)
-                    // Never claim success without proof: run the real handshake.
-                    const v = await window.specdrive.verifyAgent(a.id)
-                    setChecks((c) => ({ ...c, [a.id]: v }))
-                    setOpenAgent(a.id)
-                    toast(
-                      v.ok
-                        ? `${a.name} linked — server verified for real`
-                        : `${a.name}: config written but the link does NOT respond`
-                    )
-                  } catch {
-                    toast(`Could not connect ${a.name}`)
-                  } finally {
-                    setBusy(null)
-                  }
-                }}
-              >
-                {busy === a.id ? '…' : 'Connect'}
-              </button>
-            )}
-          </div>
-          {openAgent === a.id && (
-            <div className="agent-detail">
-              {a.connected ? (
-                <>
-                  {checks[a.id] === 'checking' && <p className="ad-line">Testing the real link…</p>}
-                  {checks[a.id] && checks[a.id] !== 'checking' && (
-                    <p className={`ad-line ${(checks[a.id] as AgentVerification).ok ? 'ok' : 'bad'}`}>
-                      {(checks[a.id] as AgentVerification).ok ? '✓ Really works — ' : '✗ NOT working — '}
-                      {(checks[a.id] as AgentVerification).detail}
-                    </p>
-                  )}
-                  {!checks[a.id] && <p className="ad-line">Click “Test now” to prove the link.</p>}
-                </>
-              ) : (
-                <p className="ad-line">Not connected yet — no “specdrive” entry in its config.</p>
-              )}
-              <AdvancedMeta configPath={a.configPath} command={a.command} args={a.args} />
-              <p className="ad-meta faded">
-                SpecDrive can see whether this link truly answers — not the agent’s account or plan.
-              </p>
-              {a.connected && (
-                <button className="pill pill-quiet" style={{ marginTop: 6 }} onClick={() => runCheck(a.id)}>
-                  Test now
-                </button>
-              )}
-            </div>
-          )}
-          </div>
-        ))}
-        <div
-          className="agent-row clickable"
-          role="button"
-          tabIndex={0}
-          onClick={() => setOpenAgent(openAgent === 'other' ? null : 'other')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') setOpenAgent(openAgent === 'other' ? null : 'other')
-          }}
+        <AgentsPanel agents={agents} connect={connect} />
+      </div>
+
+      <div className="sidebar-foot">
+        <button
+          className={`sidebar-settings${settingsOpen ? ' active' : ''}`}
+          title="Settings (⌘,)"
+          aria-label="Open settings"
+          aria-pressed={settingsOpen}
+          onClick={onOpenSettings}
         >
-          <span className="dot" />
-          <span className="name" style={{ color: 'var(--smoke)' }}>
-            Another agent?
-          </span>
-        </div>
-        {openAgent === 'other' && (
-          <div className="agent-detail">
-            <p className="ad-line">
-              Your board can talk to any AI tool that understands the shared standard — not just the ones
-              listed here.
-            </p>
-            <p className="ad-meta faded">
-              Copy this and paste it into your AI tool’s settings (an entry named “specdrive”).
-            </p>
-            <button className="pill pill-quiet" style={{ marginTop: 6 }} onClick={copyGenericConfig}>
-              Copy the setup
-            </button>
-          </div>
-        )}
+          <GearIcon />
+          <span>Settings</span>
+        </button>
       </div>
     </aside>
   )
