@@ -312,6 +312,19 @@ export interface AgentRun {
   at: string
 }
 
+/** Where a piece of this agent's brief came from. An agent is built after
+ *  reading what already exists in the open — published agent definitions,
+ *  prompt collections, vendor docs — so the owner can always see what was
+ *  borrowed, from whom, and under which licence. */
+export interface AgentSource {
+  url: string
+  title?: string
+  /** e.g. "MIT", "Apache-2.0", "unclear" — plain text, never inferred silently */
+  license?: string
+  /** One line: what was taken from it, and why it fits this job */
+  what: string
+}
+
 /** A saved team member. The owner creates it once, by talking to their agent,
  *  and runs it anywhere with /mcp__specdrive__agent_<slug>. */
 export interface AgentDef {
@@ -336,6 +349,12 @@ export interface AgentDef {
   tools: string[]
   /** Suggested model, e.g. "opus" — only ever a hint */
   modelHint?: string
+  /** What this brief was built from: the published agents and prompts that were
+   *  read before writing it, and what each one contributed. */
+  sources?: AgentSource[]
+  /** Plain words: how those candidates compared, what was kept, what was
+   *  dropped and why. The owner reads this to understand their own agent. */
+  research?: string
   scope: AgentScope
   /** Set when scope is "house": the house it belongs to */
   folderId?: string

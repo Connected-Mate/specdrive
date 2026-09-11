@@ -393,3 +393,119 @@ test('10. AGENTS.md carries a "Your agents" section naming each agent and its co
   assert.ok(withCrew.indexOf('## Current state') < withCrew.indexOf('## Your agents'))
   assert.ok(withCrew.indexOf('## Your agents') < withCrew.indexOf('## What not to touch'))
 })
+
+test('11. an agent carries where its brief came from: sources + research round-trip, cap, and the export footer', async () => {
+  const code = fs.mkdtempSync(path.join(HOME, 'sourced-code-'))
+  const p = await call('create_project', { name: 'Sourced app', one_liner: 'x', idea: 'x' })
+  const pid = idOf(p)
+  await call('set_codebase_path', { project: pid, codebase_path: code })
+
+  const made = await call('add_agent', {
+    name: 'Lineage check',
+    role: 'Reviews a diff the way the best published reviewers do',
+    mission: 'Read the diff and report what is wrong, with proof.',
+    rules: ['Never fix anything yourself.'],
+    sources: [
+      {
+        url: 'https://raw.githubusercontent.com/example/agents/main/code-reviewer.md',
+        title: 'example/agents — code-reviewer',
+        license: 'MIT',
+        what: 'Its severity scale and the rule that every finding carries a file:line.'
+      },
+      {
+        url: 'https://docs.example.com/custom-agents',
+        title: 'Vendor docs — custom agents',
+        what: 'The frontmatter shape and when a subagent should refuse to act.'
+      },
+      // kept out by the cleaner: it parses as a string but is not a real link
+      { url: 'javascript:alert(1)', what: 'must never become a link' }
+    ],
+    research: 'Three reviewers were read. The strongest one is strict about evidence; the weakest turns every nit into a blocker, so its tone was dropped.'
+  })
+  assert.equal(made.isError, false, made.text)
+  assert.match(made.text, /records 2 source\(s\)/)
+
+  const read = await call('get_agent', { agent: 'lineage-check' })
+  assert.equal(read.isError, false, read.text)
+  const a = read.s.agent
+  assert.equal(a.sources.length, 2, 'a source without a usable link was stored')
+  // A source missing its address is refused at the door, not quietly dropped:
+  // losing a credit without saying so is worse than failing the call.
+  const headless = await call('add_agent', {
+    name: 'Headless source',
+    role: 'x',
+    mission: 'x',
+    sources: [{ what: 'no address at all' }]
+  })
+  assert.equal(headless.isError, true, 'a source with no address was accepted')
+  assert.match(headless.text, /sources\[0\]\.url|Required/i)
+  assert.equal(a.sources[0].license, 'MIT')
+  assert.equal(/javascript:/.test(JSON.stringify(a.sources)), false, 'a non-http link was stored')
+  assert.match(a.research, /strongest one is strict about evidence/)
+  assert.match(read.text, /BUILT FROM/)
+  assert.match(read.text, /HOW THOSE COMPARED/)
+
+  // The exported Claude Code subagent file credits what it was built from.
+  const file = path.join(code, '.claude', 'agents', 'specdrive-lineage-check.md')
+  assert.equal(fs.existsSync(file), true, 'the agent was not exported')
+  const text = fs.readFileSync(file, 'utf8')
+  assert.match(text, /## Built from/)
+  assert.match(text, /\[example\/agents — code-reviewer\]\(https:\/\/raw\.githubusercontent\.com\/example\/agents\/main\/code-reviewer\.md\) · MIT/)
+  assert.match(text, /\*\*How they compared:\*\*/)
+
+  // Caps are enforced at BOTH doors. Over the wire the tool refuses and says
+  // why — a silently shortened credit list is a lie about what was read.
+  const many = Array.from({ length: 20 }, (_, i) => ({
+    url: `https://example.com/agent-${i}.md`,
+    what: `candidate ${i}`
+  }))
+  const overCap = await call('update_agent', {
+    agent: 'lineage-check',
+    sources: many,
+    research: 'x'.repeat(4000)
+  })
+  assert.equal(overCap.isError, true, 'an over-cap source list was accepted')
+  assert.match(overCap.text, /at most 12 element|at most 1500 character/)
+
+  // Within the caps it updates, and touches nothing else in the brief.
+  const updated = await call('update_agent', {
+    agent: 'lineage-check',
+    sources: many.slice(0, 12),
+    research: 'Second pass: four more candidates read, none better than the first.'
+  })
+  assert.equal(updated.isError, false, updated.text)
+  const after = (await call('get_agent', { agent: 'lineage-check' })).s.agent
+  assert.equal(after.sources.length, 12)
+  assert.match(after.research, /Second pass/)
+  assert.equal(after.rules.length, 1)
+  assert.equal(after.name, 'Lineage check')
+
+  // The shared cleaner is the second door: a file edited by hand, or the app's
+  // own write path, is trimmed to the same limits instead of growing forever.
+  const { cleanAgent, CREW_LIMITS } = await import('../src/shared/crew-chain.mjs')
+  const trimmed = cleanAgent({
+    name: 'Hand written',
+    role: 'x',
+    mission: 'x',
+    sources: many,
+    research: 'y'.repeat(4000)
+  })
+  assert.equal(trimmed.error, '')
+  assert.equal(trimmed.agent.sources.length, CREW_LIMITS.sources)
+  assert.equal(trimmed.agent.research.length, CREW_LIMITS.research)
+})
+
+test('12. an agent saved with no sources is told to go and research', async () => {
+  const bare = await call('add_agent', {
+    name: 'Improvised',
+    role: 'Made up on the spot',
+    mission: 'Nothing was read before writing this.'
+  })
+  assert.equal(bare.isError, false, bare.text)
+  assert.match(bare.text, /records no sources/)
+  assert.match(bare.text, /read the actual definition files/)
+  // A ready-made one is not nagged: it was not improvised.
+  const preset = await call('add_agent', { preset: 'spec-checker', name: 'Ready made' })
+  assert.equal(preset.isError, false, preset.text)
+  assert.equal(/records no sources/.test(preset.text), false)
+})

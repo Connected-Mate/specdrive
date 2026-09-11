@@ -1,4 +1,4 @@
-import type { AgentDef, AgentRun, Project } from './types'
+import type { AgentDef, AgentRun, AgentSource, Project } from './types'
 import type { ReadFolder } from './house-chain.mjs'
 
 /** An agent as it reaches a project or a house: it remembers where it comes
@@ -40,6 +40,12 @@ export interface CrewLimits {
   findingTitle: number
   findingDetail: number
   where: number
+  sources: number
+  sourceUrl: number
+  sourceTitle: number
+  license: number
+  sourceWhat: number
+  research: number
 }
 
 export interface BriefContext {
@@ -70,6 +76,8 @@ export function cleanAgent(
   input: unknown,
   opts?: { now?: string }
 ): { agent: AgentDef | null; error: string }
+export function cleanSources(raw: unknown): AgentSource[]
+export function sourcesFooter(agent: Partial<AgentDef>, heading?: string): string
 export function cleanRun(input: unknown, opts?: { now?: string }): { run: AgentRun | null; error: string }
 export function cleanRuns(raw: unknown): AgentRun[]
 export function withRun(runs: AgentRun[] | undefined, run: AgentRun): AgentRun[]

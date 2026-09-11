@@ -112,12 +112,18 @@ function yourAgentsSection(bundle: ProjectBundle): string {
   const agents = liveAgents(bundle)
   if (!agents.length) return 'No agents saved yet.'
   return agents
-    .map(
-      (a) =>
-        `- **${a.emoji} ${a.name}** — ${a.role} (${
-          a.from && a.from !== 'Everywhere' ? `from the house "${a.from}"` : 'available everywhere'
-        }) → run it with \`/mcp__specdrive__${promptNameFor(a.slug)}\``
-    )
+    .map((a) => {
+      const head = `- **${a.emoji} ${a.name}** — ${a.role} (${
+        a.from && a.from !== 'Everywhere' ? `from the house "${a.from}"` : 'available everywhere'
+      }) → run it with \`/mcp__specdrive__${promptNameFor(a.slug)}\``
+      // Where the brief came from: one indented line, so the lineage travels
+      // with the export without burying the list that matters.
+      if (!a.sources?.length) return head
+      const built = a.sources
+        .map((s) => `[${s.title || s.url}](${s.url})${s.license ? ` · ${s.license}` : ''}`)
+        .join(', ')
+      return `${head}\n  - Built from: ${built}`
+    })
     .join('\n')
 }
 

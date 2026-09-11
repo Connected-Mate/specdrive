@@ -1603,7 +1603,7 @@ server.registerTool(
           .join('\n') +
         `\n\nHOUSES (folders above projects): a house carries standing RULES — the specs of a whole ecosystem, not only technical ones: vision, who it is for, brand and design charter, compliance, mandated stack. Every project inside follows them in every phase, automatically. When the owner says "projects for X must always follow these rules", create_folder + set_folder_rules once, then place projects in it. Presets: security, design, structure — ready-made packs, pass them to create_folder instead of writing rules by hand.\nHouses NEST, without limit: "SNCF" can hold "SNCF Rail" and "SNCF Marketing", each holding their own projects. Pass create_folder's \`parent\`, or move a house later with set_folder_parent. A project inherits the rules of EVERY house above it, read outermost first; when two houses use the same rule name, the house closest to the project wins and the outer one is shown as replaced. Ask the owner where a new house belongs whenever other houses already exist.` +
         `\n\nTwo project modes:\n- mode "new": a brand-new idea, blank page.\n- mode "existing": an app that ALREADY exists (code, docs, users). Same loop, different rules: the code is ground truth, docs are hints to verify against it, and the board specs the CHANGE plus a thin tagged "as-built" baseline of only the touched areas — never the whole codebase. Every phase guide adapts automatically.\n\nWHAT THE PRODUCT MUST ANSWER (the system works this out for itself): as soon as you understand the idea, name the SHAPE of the product — ${SHAPES.join(', ')}, or your own label — and derive the areas that shape must have an answer for (business model & pricing, platform rules for an app store, backend & hosting, accounts & sign-in, payments, legal & privacy, notifications, offline, analytics, support, launch, accessibility, security…). Declare them with set_required_areas, then FILL THEM YOURSELF: research online everything the web can answer and write it as specs tagged "area:<slug>". The owner is never handed the checklist as a questionnaire — they are asked only about taste, priorities and constraints. The board recomputes coverage from the specs on every read and refuses to enter the plan phase while an area sits empty.\n\nGround rules:\n- The board is the single source of truth; write EVERYTHING you learn or decide into it immediately (small focused specs, one topic each).\n- Follow the owner\'s lead: if they ask you to research, compare or check something, do it right away and write the findings to the board — do not push on with your own question list.\n- The owner hands you a document, a pasted text, a style guide, ANY material → store it COMPLETE and VERBATIM with add_document BEFORE anything else, then extract specs from it. Never summarize away what the owner gave you.\n- Never ask the owner a question the web or the board can answer; ask only what only they can know, one short question at a time, your recommended answer first.\n- Talk to the owner in plain words, never jargon.\n- Never invent progress: only mark tasks done after verifying they work.` +
-        `\n\nAGENTS (the owner's own saved team): beyond the board, the owner keeps their OWN reusable agents in SpecDrive — a tester who tries the running app like a real person, a spec checker, a security reviewer, a design critic, or anything else they wrote. Each one is a saved brief: what it does, the rules it must always follow, how it works step by step, what it hands back. Saved once, it is available in EVERY project, and it is scoped exactly like house rules — everywhere, or attached to a house and inherited by every project inside it.\n- See what they have: list_agents (pass a project to get the list that actually reaches it). Read one in full: get_agent.\n- Run one: run_agent (agent + project) hands you the complete brief — become that agent and follow it exactly. The owner can also run it themselves by typing /mcp__specdrive__agent_<slug>.\n- Every run ENDS with log_agent_run (verdict, plain-words summary, one finding per problem). Without it the run leaves no trace on their board.\n- Trigger phrases: "my agent should always…", "create an agent that…", "I want an agent who…" → add_agent (or hand them the specdrive_integrate_agent prompt). "run my tester", "test it like a real user", "get my reviewer on this" → list_agents then run_agent.\n- Briefs are created by TALKING, never by a form: the specdrive_integrate_agent prompt interviews the owner in four plain questions and you write the brief for them. Ready-made ones exist too — add_agent with preset: human-tester, spec-checker, security-reviewer or design-critic.` +
+        `\n\nAGENTS (the owner's own saved team): beyond the board, the owner keeps their OWN reusable agents in SpecDrive — a tester who tries the running app like a real person, a spec checker, a security reviewer, a design critic, or anything else they wrote. Each one is a saved brief: what it does, the rules it must always follow, how it works step by step, what it hands back. Saved once, it is available in EVERY project, and it is scoped exactly like house rules — everywhere, or attached to a house and inherited by every project inside it.\n- See what they have: list_agents (pass a project to get the list that actually reaches it). Read one in full: get_agent.\n- Run one: run_agent (agent + project) hands you the complete brief — become that agent and follow it exactly. The owner can also run it themselves by typing /mcp__specdrive__agent_<slug>.\n- Every run ENDS with log_agent_run (verdict, plain-words summary, one finding per problem). Without it the run leaves no trace on their board.\n- Trigger phrases: "my agent should always…", "create an agent that…", "I want an agent who…" → add_agent (or hand them the specdrive_integrate_agent prompt). "run my tester", "test it like a real user", "get my reviewer on this" → list_agents then run_agent.\n- Briefs are created by TALKING, never by a form: the specdrive_integrate_agent prompt interviews the owner in four plain questions and you write the brief for them. Ready-made ones exist too — add_agent with preset: human-tester, spec-checker, security-reviewer or design-critic.\n- A NEW agent is always built AFTER research, never improvised. Before writing a brief, search for the published agents, subagent collections and prompts that already do that job, open the real definition files (the actual agent/prompt file, not the repository README), and work out what each was built for, what to lift and what to drop. Then write the brief and save it with add_agent's \`sources\` (each link with what it contributed and its licence) and \`research\` (how they compared, in plain words). Same discipline as the board itself: read reality first, then write. The owner reads that lineage on the Agents page, and it travels into the codebase export.` +
         current
     )
   }
@@ -4438,6 +4438,33 @@ const AGENT_REF = z
   .min(1)
   .describe('Which agent: its slug (what list_agents shows in brackets), its file id, or its exact name')
 
+/** What the brief was built from. A new agent is never invented from nothing:
+ *  the published agents and prompts that were actually READ are recorded here,
+ *  with what each one contributed, so the owner can see the lineage of their
+ *  own team member and check the licence of anything borrowed. */
+const SOURCES_SCHEMA = z
+  .array(
+    z.object({
+      url: z.string().max(CREW_LIMITS.sourceUrl).describe('Direct link to the file you actually read — the raw agent/prompt definition, not the repository home page'),
+      title: z.string().max(CREW_LIMITS.sourceTitle).optional().describe('What it is called, e.g. "wshobson/agents — code-reviewer"'),
+      license: z
+        .string()
+        .max(CREW_LIMITS.license)
+        .optional()
+        .describe('Its licence as the repo states it ("MIT", "Apache-2.0", "none stated") — never guess one'),
+      what: z.string().max(CREW_LIMITS.sourceWhat).describe('One line: what this one contributed to the brief, or why it was read and dropped')
+    })
+  )
+  .max(CREW_LIMITS.sources)
+  .describe('The work you read before writing this brief, at most 12 entries. Include the ones you rejected and say why — that is half the value.')
+
+const RESEARCH_SCHEMA = z
+  .string()
+  .max(CREW_LIMITS.research)
+  .describe(
+    'Plain words for the OWNER, not a changelog: how the candidates compared, what was kept, what was dropped and why. This is what makes their agent theirs rather than a copy.'
+  )
+
 /** Drop the keys the caller left out, so a preset's own value survives a merge. */
 function stripEmptyFields(input) {
   const out = {}
@@ -4496,6 +4523,14 @@ function agentCard(a) {
   if (a.method?.length) lines.push('', `HOW IT WORKS\n${a.method.map((m, i) => `${i + 1}. ${m}`).join('\n')}`)
   if (a.deliverable) lines.push('', `WHAT IT HANDS BACK\n${a.deliverable}`)
   if (a.tools?.length) lines.push('', `WHAT IT USES\n${a.tools.map((t) => `- ${t}`).join('\n')}`)
+  if (a.sources?.length)
+    lines.push(
+      '',
+      `BUILT FROM (what was read before writing this brief)\n${a.sources
+        .map((s) => `- ${s.title || s.url}${s.license ? ` [${s.license}]` : ''} — ${s.what}\n  ${s.url}`)
+        .join('\n')}`
+    )
+  if (a.research) lines.push('', `HOW THOSE COMPARED\n${a.research}`)
   if (a.disabledIn?.length)
     lines.push('', `Switched off in ${a.disabledIn.length} house(s): ${a.disabledIn.join(', ')}`)
   return lines.join('\n')
@@ -4679,6 +4714,8 @@ server.registerTool(
         .optional()
         .describe('"global" (default) = available in every project. "house" = attached to one house and inherited by every project inside it.'),
       folder: z.string().optional().describe('Id or name of the house — required when scope is "house"'),
+      sources: SOURCES_SCHEMA.optional(),
+      research: RESEARCH_SCHEMA.optional(),
       preset: z
         .enum(AGENT_PRESET_KEYS)
         .optional()
@@ -4686,7 +4723,7 @@ server.registerTool(
     },
     annotations: WRITES
   },
-  async ({ name, emoji, role, mission, rules, method, deliverable, tools, model_hint, scope, folder, preset }) => {
+  async ({ name, emoji, role, mission, rules, method, deliverable, tools, model_hint, scope, folder, preset, sources, research }) => {
     fs.mkdirSync(CREW_DIR, { recursive: true })
     const crew = listCrew()
     if (crew.length >= CREW_LIMITS.agents)
@@ -4708,7 +4745,19 @@ server.registerTool(
     }
     const merged = {
       ...(base ?? {}),
-      ...stripEmptyFields({ name, emoji, role, mission, rules, method, deliverable, tools, modelHint: model_hint }),
+      ...stripEmptyFields({
+        name,
+        emoji,
+        role,
+        mission,
+        rules,
+        method,
+        deliverable,
+        tools,
+        modelHint: model_hint,
+        sources,
+        research
+      }),
       scope: scope ?? 'global',
       folderId
     }
@@ -4733,6 +4782,11 @@ server.registerTool(
         `\n\nTell the owner, in plain words: their agent is saved, it shows up on the Agents page in SpecDrive where they can read, edit or delete it, and from now on they can run it in any project by typing ${slashFor(
           agent.slug
         )} — or by asking you to "run ${agent.name}".` +
+        (agent.sources?.length
+          ? `\n\nIt records ${agent.sources.length} source(s) — the owner can see on the Agents page what this brief was built from.`
+          : preset
+            ? ''
+            : `\n\nIt records no sources. A brief written without reading what already exists is a guess: search for published agents and prompts for this job, read the actual definition files, then add what you learned with update_agent's \`sources\` and \`research\`.`) +
         (clash
           ? `\n\nHeads up: "${clash.name}" already uses the name "${agent.slug}". On a given project only one of them runs — the one from the closest house. Rename one of them if that is not what the owner meant.`
           : '')
@@ -4757,6 +4811,10 @@ server.registerTool(
       deliverable: z.string().max(CREW_LIMITS.deliverable).optional(),
       tools: z.array(z.string().max(CREW_LIMITS.tool)).max(CREW_LIMITS.tools).optional(),
       model_hint: z.string().max(CREW_LIMITS.model).optional(),
+      sources: SOURCES_SCHEMA.optional().describe(
+        'The COMPLETE new source list — it replaces the old one. Use it to record research done after the agent was first saved.'
+      ),
+      research: RESEARCH_SCHEMA.optional(),
       slug: z
         .string()
         .max(CREW_LIMITS.slug)
@@ -4765,7 +4823,7 @@ server.registerTool(
     },
     annotations: UPDATES
   },
-  async ({ agent, name, emoji, role, mission, rules, method, deliverable, tools, model_hint, slug }) => {
+  async ({ agent, name, emoji, role, mission, rules, method, deliverable, tools, model_hint, sources, research, slug }) => {
     const current = resolveCrewAgent(agent)
     if (!current) return agentNotFound(agent)
     const patch = stripEmptyFields({
@@ -4778,6 +4836,8 @@ server.registerTool(
       deliverable,
       tools,
       modelHint: model_hint,
+      sources,
+      research,
       slug
     })
     if (!Object.keys(patch).length) return fail('Nothing to change — pass at least one field.')
@@ -5309,7 +5369,7 @@ server.registerPrompt(
   {
     title: 'SpecDrive — create one of your own agents',
     description:
-      'Save a reusable team member — a tester who tries your app like a real person, a spec checker, a security reviewer, a design critic. Four plain questions, then it is available in every project.'
+      'Build a reusable team member properly: four plain questions, then real research into the published agents and prompts that already do that job (reading the actual definition files, not the READMEs), a short comparison you can read, and only then a brief written for your situation — saved with its sources. Available in every project afterwards.'
   },
   async () => promptResult('Create one of your own SpecDrive agents', INTEGRATE_AGENT_PROMPT)
 )

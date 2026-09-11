@@ -6978,6 +6978,50 @@ button.house-crumb:hover {
   max-width: 68ch;
 }
 
+/* Where a brief came from: a credit list, read once and then left alone —
+   quieter than the brief itself, never competing with it. */
+.crew-built-lede {
+  margin-bottom: 8px;
+}
+
+.crew-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  list-style: none;
+  padding: 0;
+  max-width: 68ch;
+}
+
+.crew-sources li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.crew-sources a {
+  color: var(--signal-blue);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.crew-sources a:hover {
+  text-decoration: underline;
+}
+
+.crew-source-what {
+  flex: 1 1 100%;
+  color: var(--graphite);
+}
+
+.crew-license,
+.crew-sourced {
+  font-variant-numeric: tabular-nums;
+}
+
 .crew-list-plain {
   display: flex;
   flex-direction: column;

@@ -181,12 +181,15 @@ export function CrewScreen({
   const [runProjectId, setRunProjectId] = useState('')
   const [brief, setBrief] = useState('')
   const [briefLoading, setBriefLoading] = useState(false)
+  // The research behind a brief is the long read: available, never in the way.
+  const [researchOpen, setResearchOpen] = useState(false)
 
   useEffect(() => {
     setEditing(false)
     setDraft(null)
     setConfirmDelete(false)
     setRunProjectId('')
+    setResearchOpen(false)
   }, [selected?.id])
 
   useEffect(() => {
@@ -410,6 +413,11 @@ export function CrewScreen({
                         <span className="badge">
                           {a.runs.length} run{a.runs.length === 1 ? '' : 's'}
                         </span>
+                        {a.sources && a.sources.length > 0 && (
+                          <span className="badge crew-sourced" title="Built after reading published agents — see “Built from”">
+                            sourced
+                          </span>
+                        )}
                         {last && (
                           <span className={`verdict-pill verdict-${last.verdict}`}>
                             {VERDICT_LABEL[last.verdict]}
@@ -637,6 +645,45 @@ export function CrewScreen({
                         ))}
                         {selected.modelHint && <span className="badge">Suggested: {selected.modelHint}</span>}
                       </div>
+                    </section>
+                  )}
+
+                  {selected.sources && selected.sources.length > 0 && (
+                    <section className="crew-section">
+                      <h3>Built from</h3>
+                      <p className="crew-body-text crew-built-lede">
+                        What was read before this brief was written, and what each one gave it.
+                      </p>
+                      <ul className="crew-sources">
+                        {selected.sources.map((s, i) => (
+                          <li key={i}>
+                            <a
+                              href={s.url}
+                              onClick={(e) => {
+                                e.preventDefault()
+                                window.specdrive.openExternal(s.url)
+                              }}
+                            >
+                              {s.title || s.url}
+                            </a>
+                            {s.license && <span className="badge crew-license">{s.license}</span>}
+                            <span className="crew-source-what">{s.what}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+
+                  {selected.research && (
+                    <section className="crew-section">
+                      <button
+                        className="disclosure"
+                        onClick={() => setResearchOpen((o) => !o)}
+                        aria-expanded={researchOpen}
+                      >
+                        {researchOpen ? 'Hide the research notes ▾' : 'Read the research notes ▸'}
+                      </button>
+                      {researchOpen && <p className="crew-body-text">{selected.research}</p>}
                     </section>
                   )}
 
