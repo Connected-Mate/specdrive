@@ -600,6 +600,13 @@ export function CrewScreen({
                     </div>
                   </div>
 
+                  {selected.description && (
+                    <section className="crew-section">
+                      <h3>When to use it</h3>
+                      <p className="crew-body-text">{selected.description}</p>
+                    </section>
+                  )}
+
                   <section className="crew-section">
                     <h3>Mission</h3>
                     <p className="crew-body-text">{selected.mission}</p>
@@ -645,6 +652,14 @@ export function CrewScreen({
                         ))}
                         {selected.modelHint && <span className="badge">Suggested: {selected.modelHint}</span>}
                       </div>
+                      {selected.allowedTools && selected.allowedTools.length > 0 && (
+                        <p className="crew-body-text crew-allowlist">
+                          In your code folder it is allowed only: {selected.allowedTools.join(', ')}.
+                          {selected.allowedTools.every((t) => t !== 'Edit' && t !== 'Write')
+                            ? ' It cannot change anything.'
+                            : ''}
+                        </p>
+                      )}
                     </section>
                   )}
 

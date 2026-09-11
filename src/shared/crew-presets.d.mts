@@ -5,7 +5,20 @@ export type AgentPresetKey = 'human-tester' | 'spec-checker' | 'security-reviewe
 /** A ready-made agent: everything an AgentDef needs except id, scope and runs. */
 export type AgentPreset = Pick<
   AgentDef,
-  'slug' | 'name' | 'emoji' | 'role' | 'mission' | 'rules' | 'method' | 'deliverable' | 'tools' | 'modelHint'
+  | 'slug'
+  | 'name'
+  | 'emoji'
+  | 'role'
+  | 'description'
+  | 'mission'
+  | 'rules'
+  | 'method'
+  | 'deliverable'
+  | 'tools'
+  | 'allowedTools'
+  | 'modelHint'
+  | 'sources'
+  | 'research'
 >
 
 export const AGENT_PRESETS: Record<AgentPresetKey, AgentPreset>

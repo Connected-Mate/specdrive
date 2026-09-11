@@ -40,6 +40,8 @@ export interface CrewLimits {
   findingTitle: number
   findingDetail: number
   where: number
+  description: number
+  allowedTools: number
   sources: number
   sourceUrl: number
   sourceTitle: number
@@ -76,6 +78,10 @@ export function cleanAgent(
   input: unknown,
   opts?: { now?: string }
 ): { agent: AgentDef | null; error: string }
+export const KNOWN_TOOLS: string[]
+export const READ_ONLY_TOOLS: string[]
+export function isReadOnlyBrief(agent: Partial<AgentDef>): boolean
+export function cleanAllowedTools(raw: unknown, agent?: Partial<AgentDef>): string[]
 export function cleanSources(raw: unknown): AgentSource[]
 export function sourcesFooter(agent: Partial<AgentDef>, heading?: string): string
 export function cleanRun(input: unknown, opts?: { now?: string }): { run: AgentRun | null; error: string }

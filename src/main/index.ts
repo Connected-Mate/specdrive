@@ -117,9 +117,21 @@ function createWindow(): void {
         }
       }
       setTimeout(async () => {
+        // Let the screen finish arriving BEFORE scrolling: content that is
+        // still loading has nothing to scroll, and the scroll silently does
+        // nothing. Settle, then scroll, then shoot.
+        const settleFirst = Number(process.env.SPECDRIVE_SHOT_DELAY ?? 0)
+        if (settleFirst) await new Promise((r) => setTimeout(r, settleFirst))
         const scroll = Number(process.env.SPECDRIVE_SCROLL ?? 0)
         if (scroll) {
-          await win!.webContents.executeJavaScript(`window.scrollTo(0, ${scroll})`)
+          // Panes scroll themselves, so a check can name the one it means;
+          // without a selector this scrolls the window, as it always did.
+          const sel = process.env.SPECDRIVE_SCROLL_SEL
+          await win!.webContents.executeJavaScript(
+            sel
+              ? `document.querySelector(${JSON.stringify(sel)})?.scrollTo(0, ${scroll})`
+              : `window.scrollTo(0, ${scroll})`
+          )
           await new Promise((r) => setTimeout(r, 400))
         }
         if (process.env.SPECDRIVE_CLICK) {
@@ -138,10 +150,6 @@ function createWindow(): void {
           console.log('DEBUG_CLICK', JSON.stringify(dbg))
           await new Promise((r) => setTimeout(r, 2500))
         }
-        // Entry animations are part of the design: give them time to finish, or
-        // every automated check photographs a half-faded screen.
-        const settle = Number(process.env.SPECDRIVE_SHOT_DELAY ?? 0)
-        if (settle) await new Promise((r) => setTimeout(r, settle))
         const img = await win!.webContents.capturePage()
         const fs = await import('node:fs')
         fs.writeFileSync(shotPath, img.toPNG())

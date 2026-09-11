@@ -40,6 +40,8 @@ export const CREW_LIMITS = {
   findingTitle: 160,
   findingDetail: 1500,
   where: 300,
+  description: 160,
+  allowedTools: 12,
   sources: 12,
   sourceUrl: 500,
   sourceTitle: 160,
@@ -107,6 +109,65 @@ function cleanList(raw, max, itemMax) {
     out.push(v.slice(0, itemMax))
     if (out.length >= max) break
   }
+  return out
+}
+
+// ---------- the tool allowlist: a guardrail, not a hint ----------
+// A reviewer handed only Read, Grep and Glob cannot edit the code even if it
+// decides to. That is worth far more than a rule asking it not to, so an
+// agent whose own brief says it never fixes anything is stripped of every
+// writing tool on its way out to .claude/agents.
+
+/** Tool names a Claude Code subagent can actually be granted. */
+export const KNOWN_TOOLS = [
+  'Read',
+  'Grep',
+  'Glob',
+  'Bash',
+  'WebFetch',
+  'WebSearch',
+  'Edit',
+  'Write',
+  'NotebookEdit',
+  'Task',
+  'TodoWrite'
+]
+
+/** What a reviewer, tester or auditor gets by default: everything needed to
+ *  look, nothing that changes the product. */
+export const READ_ONLY_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'WebFetch', 'WebSearch']
+
+const WRITE_TOOLS = ['Edit', 'Write', 'NotebookEdit']
+
+/** Does this brief promise not to touch the product? Then it must not be able
+ *  to. Reads the agent's own words — the rules it published to its owner. */
+export function isReadOnlyBrief(agent) {
+  const hay = [
+    agent?.mission ?? '',
+    ...(Array.isArray(agent?.rules) ? agent.rules : []),
+    ...(Array.isArray(agent?.method) ? agent.method : [])
+  ]
+    .join(' ')
+    .toLowerCase()
+  return /\bnever\s+(?:fix|change|edit|modify|rewrite|touch|alter)\b|\bdo not\s+(?:fix|change|edit|modify|rewrite)\b|reporting is the whole job/.test(
+    hay
+  )
+}
+
+/** Normalize an allowlist: real tool names only, no duplicates, capped — and
+ *  no writing tools at all for an agent that promised not to write. */
+export function cleanAllowedTools(raw, agent) {
+  const seen = new Set()
+  const out = []
+  for (const t of Array.isArray(raw) ? raw : []) {
+    const name = KNOWN_TOOLS.find((k) => k.toLowerCase() === str(t).trim().toLowerCase())
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    out.push(name)
+    if (out.length >= CREW_LIMITS.allowedTools) break
+  }
+  if (!out.length) return []
+  if (agent && isReadOnlyBrief(agent)) return out.filter((t) => !WRITE_TOOLS.includes(t))
   return out
 }
 
@@ -183,6 +244,14 @@ export function cleanAgent(input, opts = {}) {
   if (preset) agent.preset = preset
   // What it was built from — the published agents and prompts that were read
   // before this brief was written, and how they compared.
+  // The routing line: when to reach for this agent. Falls back to the role,
+  // which is at least a description, if a narrower one.
+  const description = str(input.description).trim().slice(0, CREW_LIMITS.description)
+  if (description) agent.description = description
+  // The allowlist is resolved against the FINISHED brief, so a "never fix"
+  // rule the caller sent in the same breath already counts.
+  const allowedTools = cleanAllowedTools(input.allowedTools, agent)
+  if (allowedTools.length) agent.allowedTools = allowedTools
   const sources = cleanSources(input.sources)
   if (sources.length) agent.sources = sources
   const research = str(input.research).trim().slice(0, CREW_LIMITS.research)
@@ -368,6 +437,7 @@ export function composeBrief(agent, ctx = {}) {
   parts.push(
     `You are ${agent.emoji} **${agent.name}** — ${agent.role}.\n\nThis is a standing role the owner saved in SpecDrive. Play it exactly: the brief below is the whole job, and nothing outside it is yours to do.`
   )
+  if (agent.description) parts.push(`## When you are the right one to call\n${agent.description}`)
   parts.push(`## Your mission\n${agent.mission}`)
   if (agent.rules?.length)
     parts.push(
@@ -400,6 +470,26 @@ export function composeBrief(agent, ctx = {}) {
     parts.push(
       `## Stay inside your job\nDo not rewrite the specs, the plan or the tasks, and do not fix the code — that is not this role. Report what you find; the owner decides what happens next.`
     )
+  // The reporting contract. Every agent gets it, whatever its job: a finding
+  // the owner cannot act on is not a finding, and a number nobody measured is
+  // worse than no number at all.
+  parts.push(
+    `## How to write what you find\nOne block per problem, in this shape — nothing else:\n\n` +
+      '```\n' +
+      'WHERE: the screen, the file and line, or the exact address\n' +
+      'HOW BAD: blocker (stops someone) · major (hurts, there is a way round) · minor (small) · note (worth knowing)\n' +
+      'WHAT I SAW: the evidence — what you ran, clicked or read, and what actually happened\n' +
+      'WHY IT MATTERS: what it costs the person using this\n' +
+      'THE FIX: the smallest change that settles it, in one or two lines\n' +
+      '```\n\n' +
+      'Order them worst first. Close with a count by severity and the ONE thing to fix first.'
+  )
+  parts.push(
+    `## Two things that are never allowed\n- **Never invent a number.** No counts, percentages, scores or timings you did not actually measure. "I ran 1,847 checks, 94% passed" is a lie unless you ran them and read the output. When you have no number, say what you did instead.\n- **Never dress up a pass.** If you found nothing, say "I found nothing wrong" plainly and say what you covered. An honest empty report is a good report; a padded one wastes the owner's day.`
+  )
+  parts.push(
+    `## Before you report, check yourself\nAnswer these to yourself, honestly, and fix your report where the answer is no:\n- Did I actually go and look, or am I assuming from what the code or the board says?\n- Did I go looking for evidence that this is BROKEN, not only evidence that it works?\n- Can someone else follow every finding from my words alone, without asking me anything?\n- Is every number in my report one I measured myself?\n- Did I stay inside my job, or did I drift into somebody else's?`
+  )
   const slug = agent.slug
   parts.push(
     `## When you are finished\nCall \`log_agent_run\` with agent "${slug}"${project ? `, project "${project.id}"` : ''}, your verdict (\`pass\` = nothing wrong, \`issues\` = problems found, \`blocked\` = you could not do the job, \`info\` = just a report), a short plain-words summary, and one finding per problem (severity \`blocker\`/\`major\`/\`minor\`/\`note\`, a title, the detail, and where it is). That report is what the owner reads in SpecDrive — without it, this run leaves no trace.`
@@ -433,9 +523,21 @@ export function sourcesFooter(agent, heading = '## Built from') {
  *  Written to <codebase>/.claude/agents/specdrive-<slug>.md */
 export function renderAgentFile(agent, brief) {
   const esc = (s) => str(s).replace(/"/g, "'").replace(/\s+/g, ' ').trim()
-  const lines = ['---', `name: specdrive-${agent.slug}`, `description: "${esc(agent.role)}"`]
+  // `description` is the routing key: the tool picks this agent from this line
+  // alone, so it says WHEN to use it. The role stands in when none was written.
+  const lines = [
+    '---',
+    `name: specdrive-${agent.slug}`,
+    `description: "${esc(agent.description || agent.role)}"`
+  ]
   if (agent.modelHint) lines.push(`model: ${esc(agent.modelHint)}`)
-  if (agent.tools?.length) lines.push(`tools: ${agent.tools.map((t) => esc(t)).join(', ')}`)
+  // Real tool names only, and never a writing tool for a brief that promised
+  // not to write — the allowlist is what actually holds it to its word.
+  const allowed = cleanAllowedTools(
+    agent.allowedTools?.length ? agent.allowedTools : READ_ONLY_TOOLS,
+    agent
+  )
+  if (allowed.length) lines.push(`tools: ${allowed.join(', ')}`)
   lines.push('---', '')
   lines.push('<!-- Generated by SpecDrive — edit this agent in SpecDrive, not here. -->', '')
   lines.push(brief, '')

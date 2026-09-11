@@ -337,6 +337,10 @@ export interface AgentDef {
   emoji: string
   /** One line: what it does */
   role: string
+  /** The routing line: WHEN to reach for this agent, not what it is. Claude
+   *  Code picks a subagent from this alone, so it says "use after writing
+   *  code", "use before shipping a screen" — a trigger, not a job title. */
+  description?: string
   /** What it is for, in the owner's own terms */
   mission: string
   /** The MUST list — binding on every run */
@@ -345,8 +349,12 @@ export interface AgentDef {
   method: string[]
   /** What it hands back at the end */
   deliverable: string
-  /** Suggested tools, plain words */
+  /** Suggested tools, plain words — what the owner reads on the card */
   tools: string[]
+  /** The real tool names the exported subagent is allowed to use. An allowlist
+   *  is a behavioural guardrail, not a hint: an agent whose rules say "never
+   *  fix anything" is handed no Edit or Write, so it physically cannot. */
+  allowedTools?: string[]
   /** Suggested model, e.g. "opus" — only ever a hint */
   modelHint?: string
   /** What this brief was built from: the published agents and prompts that were

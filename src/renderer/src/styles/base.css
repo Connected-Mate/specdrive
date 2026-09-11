@@ -6978,6 +6978,12 @@ button.house-crumb:hover {
   max-width: 68ch;
 }
 
+.crew-allowlist {
+  margin-top: 8px;
+  color: var(--smoke);
+  font-size: 12px;
+}
+
 /* Where a brief came from: a credit list, read once and then left alone —
    quieter than the brief itself, never competing with it. */
 .crew-built-lede {

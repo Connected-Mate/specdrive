@@ -63,7 +63,7 @@ test('1. a saved agent becomes a real slash command, and a preset fills the whol
   const p = await promptBy('agent_human_tester')
   assert.ok(p, `prompts/list has no agent_human_tester — got: ${(await promptNames()).join(', ')}`)
   assert.equal(p.title, 'Agent — Human tester')
-  assert.match(p.description, /real person/i)
+  assert.match(p.description, /like a real/i)
 
   // the preset really filled it in — a bare shell would pass the slug check
   const got = await call('get_agent', { agent: 'human-tester' })
@@ -508,4 +508,126 @@ test('12. an agent saved with no sources is told to go and research', async () =
   const preset = await call('add_agent', { preset: 'spec-checker', name: 'Ready made' })
   assert.equal(preset.isError, false, preset.text)
   assert.equal(/records no sources/.test(preset.text), false)
+})
+
+test('13. the exported subagent file routes on `description` and is fenced in by a tool allowlist', async () => {
+  const code = fs.mkdtempSync(path.join(HOME, 'fm-code-'))
+  const p = await call('create_project', { name: 'Frontmatter app', one_liner: 'x', idea: 'x' })
+  const pid = idOf(p)
+  await call('set_codebase_path', { project: pid, codebase_path: code })
+
+  // A brief that promises never to fix anything must not be handed Edit/Write,
+  // even when the caller asks for them: the allowlist is the guardrail.
+  const made = await call('add_agent', {
+    name: 'Fenced reviewer',
+    role: 'Reviews a diff',
+    description: 'Use after writing code, before opening a pull request.',
+    mission: 'Read the diff and report what is wrong.',
+    rules: ['Never fix anything yourself — reporting is the whole job.'],
+    allowed_tools: ['Read', 'Grep', 'Edit', 'Write', 'NotThatOne'],
+    model_hint: 'opus'
+  })
+  assert.equal(made.isError, false, made.text)
+
+  const file = path.join(code, '.claude', 'agents', 'specdrive-fenced-reviewer.md')
+  const text = fs.readFileSync(file, 'utf8')
+  assert.match(text, /^---\n/)
+  assert.match(text, /name: specdrive-fenced-reviewer/)
+  // the routing line wins over the role in the frontmatter description
+  assert.match(text, /description: "Use after writing code, before opening a pull request\."/)
+  assert.match(text, /model: opus/)
+  const toolLine = text.match(/^tools: (.+)$/m)?.[1]
+  assert.ok(toolLine, 'no tools line in the frontmatter')
+  assert.equal(/Edit|Write/.test(toolLine), false, `a "never fix" agent was handed writing tools: ${toolLine}`)
+  assert.equal(/NotThatOne/.test(toolLine), false, 'an unknown tool name reached the frontmatter')
+  assert.match(toolLine, /Read/)
+  assert.match(toolLine, /Grep/)
+
+  // An agent that says nothing about fixing keeps what it was granted.
+  const builder = await call('add_agent', {
+    name: 'Fixer upper',
+    role: 'Applies the fixes',
+    mission: 'Change the code where the report says to.',
+    rules: ['Explain every change in one line.'],
+    allowed_tools: ['Read', 'Edit', 'Write']
+  })
+  assert.equal(builder.isError, false, builder.text)
+  const builderText = fs.readFileSync(path.join(code, '.claude', 'agents', 'specdrive-fixer-upper.md'), 'utf8')
+  assert.match(builderText.match(/^tools: (.+)$/m)[1], /Edit/)
+
+  // With no allowlist at all, the export falls back to the read-only set.
+  const plain = await call('add_agent', { name: 'Plain one', role: 'Looks around', mission: 'Look at things.' })
+  assert.equal(plain.isError, false, plain.text)
+  const plainText = fs.readFileSync(path.join(code, '.claude', 'agents', 'specdrive-plain-one.md'), 'utf8')
+  const plainTools = plainText.match(/^tools: (.+)$/m)[1]
+  assert.match(plainTools, /Read, Grep, Glob/)
+  assert.equal(/Edit|Write/.test(plainTools), false)
+})
+
+test('14. every ready-made agent arrives researched: sources, a routing line and a read-only allowlist', async () => {
+  const { AGENT_PRESETS, AGENT_PRESET_KEYS } = await import('../src/shared/crew-presets.mjs')
+  for (const key of AGENT_PRESET_KEYS) {
+    const preset = AGENT_PRESETS[key]
+    assert.ok(preset, `${key} is listed but missing`)
+    assert.ok(preset.sources?.length >= 2, `${key} carries fewer than two sources`)
+    for (const s of preset.sources) {
+      assert.match(s.url, /^https:\/\//, `${key}: a source is not a real link`)
+      assert.ok(s.what?.length > 10, `${key}: a source does not say what it contributed`)
+    }
+    assert.ok(preset.research?.length > 80, `${key} has no research note`)
+    assert.ok(preset.description?.length > 10, `${key} has no routing line`)
+    assert.ok(preset.description.length <= 160, `${key}: routing line too long`)
+    assert.ok(preset.allowedTools?.length, `${key} has no tool allowlist`)
+    assert.equal(
+      preset.allowedTools.some((t) => t === 'Edit' || t === 'Write'),
+      false,
+      `${key} is a reviewer and must not be handed writing tools`
+    )
+  }
+
+  // Saved through the real tool, a preset keeps all of it.
+  // Naming a ready-made agent makes the NAME the command, not the preset key.
+  const saved = await call('add_agent', { preset: 'security-reviewer', name: 'Sec preset check' })
+  assert.equal(saved.isError, false, saved.text)
+  assert.equal(slugOf(saved), 'sec-preset-check', saved.text)
+  const read = await call('get_agent', { agent: 'sec-preset-check' })
+  const a = read.s.agent
+  assert.equal(a.sources.length, 3)
+  assert.match(a.research, /top ten risks|published top ten/i)
+  assert.match(a.description, /before anything goes in front of real people/i)
+  assert.match(read.text, /When to use it:/)
+  assert.match(read.text, /Tools it is allowed:/)
+})
+
+test('15. the composed run brief carries the reporting contract, not just the job', async () => {
+  const p = await call('create_project', { name: 'Contract app', one_liner: 'x', idea: 'x' })
+  const pid = idOf(p)
+  await call('add_agent', { preset: 'human-tester', name: 'Contract tester' })
+  const r = await call('run_agent', { agent: 'contract-tester', project: pid })
+  assert.equal(r.isError, false, r.text)
+  assert.match(r.text, /WHERE: the screen/)
+  assert.match(r.text, /HOW BAD: blocker/)
+  assert.match(r.text, /WHAT I SAW/)
+  assert.match(r.text, /THE FIX/)
+  assert.match(r.text, /Never invent a number/)
+  assert.match(r.text, /I found nothing wrong/)
+  assert.match(r.text, /Before you report, check yourself/)
+  assert.match(r.text, /log_agent_run/)
+  assert.match(r.text, /When you are the right one to call/)
+})
+
+test('16. telling the board where the code lives exports the crew there straight away', async () => {
+  const code = fs.mkdtempSync(path.join(HOME, 'late-path-'))
+  fs.mkdirSync(path.join(code, '.claude', 'agents'), { recursive: true })
+  fs.writeFileSync(path.join(code, '.claude', 'agents', 'mine.md'), 'not SpecDrive')
+  // The agents already exist; only the path is new.
+  const p = await call('create_project', { name: 'Late path app', one_liner: 'x', idea: 'x' })
+  const r = await call('set_codebase_path', { project: idOf(p), codebase_path: code })
+  assert.equal(r.isError, false, r.text)
+  const written = fs.readdirSync(path.join(code, '.claude', 'agents'))
+  assert.ok(
+    written.some((f) => f.startsWith('specdrive-')),
+    `nothing was exported after the path was set: ${written.join(', ')}`
+  )
+  assert.equal(fs.readFileSync(path.join(code, '.claude', 'agents', 'mine.md'), 'utf8'), 'not SpecDrive')
 })

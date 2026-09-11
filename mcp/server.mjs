@@ -49,6 +49,8 @@ import {
 // an agent created here and one created on the Agents screen are identical.
 import {
   CREW_LIMITS,
+  KNOWN_TOOLS,
+  READ_ONLY_TOOLS,
   SEVERITIES,
   VERDICTS,
   VERDICT_LABEL,
@@ -2044,6 +2046,10 @@ server.registerTool(
     const isGit = Boolean(gitHead(codebase_path))
     touchProject(id, { codebasePath: codebase_path })
     logActivity(id, 'agent', 'set_codebase_path', `Codebase path set: ${codebase_path}`)
+    // The owner's crew belongs next to the code: now that the board knows where
+    // that is, write it out — waiting for the next edit of an agent would leave
+    // the folder empty for no reason.
+    syncCrewExports()
     return ok(
       `Codebase path recorded for "${p.name}".` +
         (isGit
@@ -4516,8 +4522,10 @@ function agentCard(a) {
       ? `Available in: the house "${readFolder(a.folderId)?.name ?? a.folderId}" and every project inside it`
       : 'Available in: every project (everywhere)'
   ]
+  if (a.description) lines.push(`When to use it: ${a.description}`)
   if (a.preset) lines.push(`Started from the ready-made agent "${a.preset}"`)
   if (a.modelHint) lines.push(`Suggested model: ${a.modelHint}`)
+  if (a.allowedTools?.length) lines.push(`Tools it is allowed: ${a.allowedTools.join(', ')}`)
   lines.push('', `MISSION\n${a.mission}`)
   if (a.rules?.length) lines.push('', `ITS RULES (binding every run)\n${a.rules.map((r) => `- ${r}`).join('\n')}`)
   if (a.method?.length) lines.push('', `HOW IT WORKS\n${a.method.map((m, i) => `${i + 1}. ${m}`).join('\n')}`)
@@ -4683,6 +4691,13 @@ server.registerTool(
         .max(CREW_LIMITS.role)
         .optional()
         .describe('ONE line saying what it does — this is what the owner reads on the card and what other agents see'),
+      description: z
+        .string()
+        .max(CREW_LIMITS.description)
+        .optional()
+        .describe(
+          'The ROUTING line: one sentence saying WHEN to reach for this agent, not what it is ("Use after writing code, before opening a pull request"). A coding tool picks this agent from this line alone, so write a trigger, not a job title.'
+        ),
       mission: z
         .string()
         .max(CREW_LIMITS.mission)
@@ -4708,6 +4723,13 @@ server.registerTool(
         .max(CREW_LIMITS.tools)
         .optional()
         .describe('What it should use, in plain words — "the running product in a browser", "get_project"'),
+      allowed_tools: z
+        .array(z.string().max(CREW_LIMITS.tool))
+        .max(CREW_LIMITS.allowedTools)
+        .optional()
+        .describe(
+          `The REAL tool names the exported subagent may use, from: ${KNOWN_TOOLS.join(', ')}. An allowlist is a guardrail, not a hint — a reviewer given only Read, Grep and Glob cannot edit the code even if it decides to. Leave it out for the read-only set (${READ_ONLY_TOOLS.join(', ')}). Writing tools are stripped automatically from any agent whose own rules say it never fixes anything.`
+        ),
       model_hint: z.string().max(CREW_LIMITS.model).optional().describe('Suggested model, e.g. "opus" — only ever a hint'),
       scope: z
         .enum(['global', 'house'])
@@ -4723,7 +4745,7 @@ server.registerTool(
     },
     annotations: WRITES
   },
-  async ({ name, emoji, role, mission, rules, method, deliverable, tools, model_hint, scope, folder, preset, sources, research }) => {
+  async ({ name, emoji, role, description, mission, rules, method, deliverable, tools, allowed_tools, model_hint, scope, folder, preset, sources, research }) => {
     fs.mkdirSync(CREW_DIR, { recursive: true })
     const crew = listCrew()
     if (crew.length >= CREW_LIMITS.agents)
@@ -4749,11 +4771,13 @@ server.registerTool(
         name,
         emoji,
         role,
+        description,
         mission,
         rules,
         method,
         deliverable,
         tools,
+        allowedTools: allowed_tools,
         modelHint: model_hint,
         sources,
         research
@@ -4762,6 +4786,10 @@ server.registerTool(
       folderId
     }
     if (preset) merged.preset = preset
+    // A ready-made agent carries its own slug. The moment the owner gives it a
+    // name of their own, that name is what they will type — so the preset's
+    // slug steps aside and the command follows the name.
+    if (preset && name) delete merged.slug
     const { agent, error } = cleanAgent(merged)
     if (error || !agent) return fail(error || 'That agent could not be saved.')
     agent.id = freeCrewId(agentSlug(agent.slug))
@@ -4805,11 +4833,21 @@ server.registerTool(
       name: z.string().max(CREW_LIMITS.name).optional(),
       emoji: z.string().max(CREW_LIMITS.emoji).optional(),
       role: z.string().max(CREW_LIMITS.role).optional().describe('The one line on its card'),
+      description: z
+        .string()
+        .max(CREW_LIMITS.description)
+        .optional()
+        .describe('The routing line: WHEN to reach for this agent, in one sentence'),
       mission: z.string().max(CREW_LIMITS.mission).optional(),
       rules: z.array(z.string().max(CREW_LIMITS.rule)).max(CREW_LIMITS.rules).optional().describe('The COMPLETE new rule list — it replaces the old one'),
       method: z.array(z.string().max(CREW_LIMITS.step)).max(CREW_LIMITS.method).optional().describe('The COMPLETE new ordered method'),
       deliverable: z.string().max(CREW_LIMITS.deliverable).optional(),
       tools: z.array(z.string().max(CREW_LIMITS.tool)).max(CREW_LIMITS.tools).optional(),
+      allowed_tools: z
+        .array(z.string().max(CREW_LIMITS.tool))
+        .max(CREW_LIMITS.allowedTools)
+        .optional()
+        .describe(`The COMPLETE new allowlist of real tool names, from: ${KNOWN_TOOLS.join(', ')}`),
       model_hint: z.string().max(CREW_LIMITS.model).optional(),
       sources: SOURCES_SCHEMA.optional().describe(
         'The COMPLETE new source list — it replaces the old one. Use it to record research done after the agent was first saved.'
@@ -4823,18 +4861,20 @@ server.registerTool(
     },
     annotations: UPDATES
   },
-  async ({ agent, name, emoji, role, mission, rules, method, deliverable, tools, model_hint, sources, research, slug }) => {
+  async ({ agent, name, emoji, role, description, mission, rules, method, deliverable, tools, allowed_tools, model_hint, sources, research, slug }) => {
     const current = resolveCrewAgent(agent)
     if (!current) return agentNotFound(agent)
     const patch = stripEmptyFields({
       name,
       emoji,
       role,
+      description,
       mission,
       rules,
       method,
       deliverable,
       tools,
+      allowedTools: allowed_tools,
       modelHint: model_hint,
       sources,
       research,
