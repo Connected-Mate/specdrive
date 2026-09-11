@@ -97,6 +97,25 @@ export const PlusIcon = (): React.JSX.Element => (
   </svg>
 )
 
+/** Two saved team members — the Agents (crew) module. */
+export const CrewIcon = (): React.JSX.Element => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+    <circle cx="9" cy="8" r="3.1" stroke="currentColor" strokeWidth="1.5" />
+    <path
+      d="M3.6 19.2c.6-3.3 2.9-5 5.4-5s4.8 1.7 5.4 5"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    />
+    <path
+      d="M15.2 5.3a3.1 3.1 0 0 1 0 5.9M17.6 19.2c-.45-2.5-1.85-4.1-3.7-4.8"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    />
+  </svg>
+)
+
 export const FolderPlusIcon = (): React.JSX.Element => (
   <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
     <path

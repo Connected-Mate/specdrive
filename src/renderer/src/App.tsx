@@ -3,6 +3,7 @@ import { Welcome } from './screens/Welcome'
 import { Project } from './screens/Project'
 import { Settings } from './screens/Settings'
 import { FolderScreen } from './screens/FolderScreen'
+import { CrewScreen } from './screens/CrewScreen'
 import { Sidebar } from './components/Sidebar'
 import { GuideRail } from './components/GuideRail'
 import { ToastProvider } from './components/Toast'
@@ -36,13 +37,27 @@ export default function App(): React.JSX.Element {
     return () => clearTimeout(t)
   }, [settingsState])
   const [folderId, setFolderId] = useState<string | 'new' | null>(null)
+  // The Agents (crew) screen: a page of its own, like a house — 'on' shows it,
+  // and it remembers which agent was last open so a jump from a house or a
+  // project (an "Agents of this house" card, a project's agent strip) lands on
+  // the right one.
+  const [crewOn, setCrewOn] = useState(false)
+  const [crewAgentId, setCrewAgentId] = useState<string | null>(null)
   const selectProject = useCallback((id: string | null) => {
     setFolderId(null)
+    setCrewOn(false)
     setOpenId(id)
   }, [])
   const openFolder = useCallback((id: string | 'new') => {
     setOpenId(null)
+    setCrewOn(false)
     setFolderId(id)
+  }, [])
+  const openCrew = useCallback((agentId?: string | null) => {
+    setOpenId(null)
+    setFolderId(null)
+    setCrewOn(true)
+    if (agentId !== undefined) setCrewAgentId(agentId)
   }, [])
   // The open house was deleted (here or by an agent): back to the welcome screen.
   useEffect(() => {
@@ -125,6 +140,7 @@ export default function App(): React.JSX.Element {
         a.project.createdAt > b.project.createdAt ? a : b
       )
       setFolderId(null)
+      setCrewOn(false)
       setOpenId(newest.project.id)
     }
     prevCount.current = projects.length
@@ -138,23 +154,34 @@ export default function App(): React.JSX.Element {
     if (prevFolders.current >= 0 && folders.length === prevFolders.current + 1) {
       const newest = folders.reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
       setOpenId(null)
+      setCrewOn(false)
       setFolderId(newest.id)
     }
     prevFolders.current = folders.length
   }, [folders])
 
-  // First launch with existing projects: open the most recent one.
+  // First launch with existing projects: open the most recent one. The first
+  // load can take a second or two (it asks git whether each codebase moved), so
+  // the owner may already have opened Agents or a house by the time it lands —
+  // never yank them back to a project they did not ask for.
   const booted = useRef(false)
   useEffect(() => {
     if (loaded && !booted.current) {
       booted.current = true
+      if (crewOn || folderId) return
       if (projects.length) setOpenId(projects[0].project.id)
     }
-  }, [loaded, projects])
+  }, [loaded, projects, crewOn, folderId])
 
-  // Automated visual checks can force a project open.
+  // Automated visual checks can force a project open. It wins over the
+  // first-launch auto-open, which may still be waiting on the project list.
   useEffect(() => {
-    const h = (e: Event): void => setOpenId((e as CustomEvent<string>).detail)
+    const h = (e: Event): void => {
+      booted.current = true
+      setFolderId(null)
+      setCrewOn(false)
+      setOpenId((e as CustomEvent<string>).detail)
+    }
     window.addEventListener('specdrive:open-project', h)
     return () => window.removeEventListener('specdrive:open-project', h)
   }, [])
@@ -176,6 +203,8 @@ export default function App(): React.JSX.Element {
           settingsOpen={settingsState === 'open'}
           onOpenFolder={openFolder}
           activeFolderId={folderId}
+          onOpenCrew={() => openCrew()}
+          crewActive={crewOn}
         />
         {/* One strip, one vocabulary: the same button closes the pane on its
             own side, on every screen. */}
@@ -199,7 +228,13 @@ export default function App(): React.JSX.Element {
             <RailIcon />
           </button>
         </div>
-        {folderId ? (
+        {crewOn ? (
+          <CrewScreen
+            projects={projects}
+            openId={crewAgentId}
+            onSelect={setCrewAgentId}
+          />
+        ) : folderId ? (
           <FolderScreen
             folder={folderId === 'new' ? null : (folders.find((f) => f.id === folderId) ?? null)}
             projects={projects}
@@ -207,6 +242,7 @@ export default function App(): React.JSX.Element {
             onGone={() => setFolderId(null)}
             onOpenFolder={openFolder}
             onOpenProject={selectProject}
+            onOpenAgent={(id) => openCrew(id)}
           />
         ) : open ? (
           <Project key={open.project.id} bundle={open} />
@@ -222,6 +258,7 @@ export default function App(): React.JSX.Element {
         )}
         <GuideRail
           bundle={open ?? null}
+          crewView={crewOn}
           folderView={
             folderId === 'new'
               ? { kind: 'new' }

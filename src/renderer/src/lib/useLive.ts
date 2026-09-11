@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { DetectedAgent, Folder, LiveSession, ProjectBundle } from '@shared/types'
+import type { AgentDef, DetectedAgent, Folder, LiveSession, ProjectBundle } from '@shared/types'
 
 /** All projects, refreshed live whenever the MCP server writes to disk. */
 export function useProjects(): { projects: ProjectBundle[]; loaded: boolean } {
@@ -112,6 +112,24 @@ export function useFolders(): { folders: Folder[]; refresh: () => void } {
     return window.specdrive.onProjectsChanged(refresh)
   }, [refresh])
   return { folders, refresh }
+}
+
+/** The owner's own agents, refreshed live whenever anything under
+ *  ~/.specdrive changes — an agent created over MCP, or a report an agent just
+ *  posted back, appears without a reload. */
+export function useCrew(): { crew: AgentDef[]; refresh: () => void } {
+  const [crew, setCrew] = useState<AgentDef[]>([])
+  const refresh = useCallback(() => {
+    window.specdrive
+      .listCrew()
+      .then(setCrew)
+      .catch((err) => console.error('listCrew failed:', err))
+  }, [])
+  useEffect(() => {
+    refresh()
+    return window.specdrive.onProjectsChanged(refresh)
+  }, [refresh])
+  return { crew, refresh }
 }
 
 /** Where the MCP server lives on this Mac — every copy-paste prompt embeds it

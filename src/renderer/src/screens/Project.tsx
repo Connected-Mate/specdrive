@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import type { ProjectBundle, Wireframe } from '@shared/types'
+import type { AgentRun, ProjectBundle, Wireframe } from '@shared/types'
+import type { EffectiveAgent } from '@shared/crew-chain.mjs'
+import { promptNameFor, VERDICT_LABEL, SEVERITY_LABEL } from '@shared/crew-chain.mjs'
+import { CopyButton } from '@/components/PromptCopy'
 import { TickIcon } from '@/components/Icons'
 import { FlowMap, type FlowThumb } from '@/components/FlowMap'
 import { KitWireframe } from '@/components/wireframe-kit/KitWireframe'
@@ -653,6 +656,123 @@ function ActivityTab({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   )
 }
 
+/** "Agents you can run here" — the effective crew for this project, each with
+ *  its slash command and a one-click copy of the ready-to-paste brief. */
+function CrewStrip({ bundle }: { bundle: ProjectBundle }): React.JSX.Element | null {
+  const active = useMemo(
+    () => (bundle.agents ?? []).filter((a) => !a.disabled && !a.supersededBy),
+    [bundle.agents]
+  )
+  const [briefs, setBriefs] = useState<Record<string, string>>({})
+  const ids = active.map((a) => a.id).join(',')
+  useEffect(() => {
+    let cancelled = false
+    for (const a of active) {
+      window.specdrive
+        .agentBrief(a.id, bundle.project.id)
+        .then((b) => {
+          if (!cancelled) setBriefs((m) => ({ ...m, [a.id]: b }))
+        })
+        .catch(() => {})
+    }
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ids, bundle.project.id])
+
+  if (!active.length) return null
+  return (
+    <div className="crew-strip">
+      <span className="crew-strip-label">Agents you can run here</span>
+      <div className="crew-strip-chips">
+        {active.map((a) => (
+          <div key={a.id} className="crew-chip">
+            <span aria-hidden>{a.emoji}</span>
+            <span className="crew-chip-name">{a.name}</span>
+            <code className="crew-chip-slash">/mcp__specdrive__{promptNameFor(a.slug)}</code>
+            <CopyButton text={briefs[a.id] ?? ''} label="Copy prompt" quiet />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** One report, read like a spec card — the same entrance the board's specs
+ *  get, so a report an agent just posted back is just as unmissable. */
+function AgentReportCard({
+  run,
+  agent,
+  i
+}: {
+  run: AgentRun
+  agent: EffectiveAgent
+  i: number
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  return (
+    <article className="spec-card crew-run-card" style={{ '--i': i } as React.CSSProperties}>
+      <div className="crew-run-head">
+        <span aria-hidden>{agent.emoji}</span>
+        <h4 style={{ marginRight: 'auto' }}>{agent.name}</h4>
+        <span className={`verdict-pill verdict-${run.verdict}`}>{VERDICT_LABEL[run.verdict]}</span>
+        <span className="crew-run-when">{timeAgo(run.at)}</span>
+      </div>
+      <p className="crew-run-summary">{run.summary}</p>
+      {run.findings.length > 0 && (
+        <>
+          <button className="disclosure" onClick={() => setOpen((o) => !o)}>
+            {open
+              ? 'Hide findings ▾'
+              : `See ${run.findings.length} finding${run.findings.length > 1 ? 's' : ''} ▸`}
+          </button>
+          {open && (
+            <div className="crew-findings">
+              {run.findings.map((f, fi) => (
+                <div key={fi} className="crew-finding">
+                  <span className={`severity-tag severity-${f.severity}`}>{SEVERITY_LABEL[f.severity]}</span>
+                  <div className="crew-finding-body">
+                    <span className="crew-finding-title">{f.title}</span>
+                    {f.detail && <span className="crew-finding-detail">{f.detail}</span>}
+                    {f.where && <span className="crew-finding-where">{f.where}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </article>
+  )
+}
+
+/** Every report posted back on this project, newest first — the crew's side
+ *  of the diary. */
+function AgentReports({ bundle }: { bundle: ProjectBundle }): React.JSX.Element | null {
+  const rows = useMemo(() => {
+    const out: { run: AgentRun; agent: EffectiveAgent }[] = []
+    for (const agent of bundle.agents ?? []) {
+      for (const run of agent.runs ?? []) {
+        if (run.projectId === bundle.project.id) out.push({ run, agent })
+      }
+    }
+    return out.sort((a, b) => (a.run.at < b.run.at ? 1 : -1))
+  }, [bundle.agents, bundle.project.id])
+
+  if (!rows.length) return null
+  return (
+    <section className="crew-reports">
+      <h3>Agent reports</h3>
+      <div className="crew-runs">
+        {rows.map((r, i) => (
+          <AgentReportCard key={r.run.id} run={r.run} agent={r.agent} i={i} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Element {
   const { project, specs, tasks, wireframes, activity } = bundle
   const [tab, setTab] = useState<Tab>('board')
@@ -676,15 +796,20 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
     return undefined
   }, [specs])
 
-  // Automated visual checks can force a tab.
+  // Auto-jump to the plan while building, board otherwise? Keep user control; just default once.
+  const autoTabbed = useRef(false)
+
+  // Automated visual checks can force a tab. It wins over the auto-jump below,
+  // which would otherwise pull the screenshot back to the build steps.
   useEffect(() => {
-    const h = (e: Event): void => setTab((e as CustomEvent<Tab>).detail)
+    const h = (e: Event): void => {
+      autoTabbed.current = true
+      setTab((e as CustomEvent<Tab>).detail)
+    }
     window.addEventListener('specdrive:open-tab', h)
     return () => window.removeEventListener('specdrive:open-tab', h)
   }, [])
 
-  // Auto-jump to the plan while building, board otherwise? Keep user control; just default once.
-  const autoTabbed = useRef(false)
   useEffect(() => {
     if (!autoTabbed.current && project.phase === 'build' && tasks.length) {
       setTab('plan')
@@ -798,7 +923,11 @@ export function Project({ bundle }: { bundle: ProjectBundle }): React.JSX.Elemen
       <p className="tab-hint">{TAB_HINT[tab]}</p>
       <div className="content-body">
         {tab === 'board' && (
-          <BoardDoc bundle={bundle} specs={specs} freshIds={freshIds} projectName={project.name} />
+          <>
+            <CrewStrip bundle={bundle} />
+            <BoardDoc bundle={bundle} specs={specs} freshIds={freshIds} projectName={project.name} />
+            <AgentReports bundle={bundle} />
+          </>
         )}
         {tab === 'scenarios' && <ScenariosTab bundle={bundle} />}
         {tab === 'blueprint' && <BlueprintTab bundle={bundle} />}

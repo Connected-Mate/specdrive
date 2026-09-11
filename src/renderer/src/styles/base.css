@@ -4999,9 +4999,12 @@ button.memo-row:hover {
   padding: 2px 7px;
 }
 
-/* Settings gear, pinned under the agents */
+/* Agents entry + settings gear, pinned under the detected coding agents */
 .sidebar-foot {
   flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   padding: 4px 8px 12px;
 }
 
@@ -6794,4 +6797,447 @@ button.house-crumb:hover {
   font-size: 11px;
   color: var(--smoke);
   font-style: italic;
+}
+
+/* ============================================================
+   Agents (crew) — the owner's own saved team members.
+   ============================================================ */
+
+.crew-page {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  max-width: var(--work-max);
+  padding: 4px 0 56px;
+}
+
+@media (max-width: 980px) {
+  .crew-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.crew-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: sticky;
+  top: -8px;
+}
+
+.crew-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.crew-add-drawer {
+  background: var(--paper);
+  border-radius: var(--radius-inner);
+  box-shadow: var(--glow-ring-thin);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: pane-in 0.3s var(--ease-spring) both;
+}
+
+.crew-presets {
+  row-gap: 8px;
+}
+
+.crew-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.crew-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: var(--radius-card);
+  background: var(--paper);
+  box-shadow: var(--glow-ring-thin);
+  animation: side-in 0.35s var(--ease-spring) both;
+  animation-delay: calc(var(--i, 0) * 30ms);
+  transition: box-shadow 0.2s ease, transform 0.2s var(--ease-spring);
+}
+
+.crew-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--glow-ring);
+}
+
+.crew-card.active {
+  box-shadow: 0 0 0 1.5px var(--signal-blue), var(--glow-ring);
+}
+
+.crew-card-emoji {
+  flex: none;
+  font-size: 20px;
+  line-height: 1;
+  margin-top: 1px;
+}
+
+.crew-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.crew-card-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.crew-card-role {
+  font-size: 11.5px;
+  color: var(--graphite);
+  line-height: 1.4;
+}
+
+.crew-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+}
+
+.crew-detail {
+  background: var(--paper);
+  border-radius: var(--radius-card-lg);
+  box-shadow: var(--glow-ring);
+  padding: 24px 26px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: pane-in 0.4s var(--ease-spring) both;
+}
+
+.crew-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.crew-detail-emoji {
+  flex: none;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.crew-detail-title {
+  flex: 1 1 auto;
+  min-width: 160px;
+}
+
+.crew-detail-title h2 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.05;
+  color: var(--ink);
+}
+
+.crew-detail-role {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--smoke);
+}
+
+.crew-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.crew-section h3 {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 400;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+
+.crew-body-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--graphite);
+  max-width: 68ch;
+}
+
+.crew-list-plain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 18px;
+}
+
+.crew-list-plain li {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--graphite);
+}
+
+.crew-fe-identity {
+  grid-template-columns: 90px minmax(0, 1fr) !important;
+}
+
+.crew-scope-tabs {
+  margin-bottom: 8px;
+  align-self: flex-start;
+}
+
+.crew-run {
+  border-top: 1px solid var(--hairline);
+  padding-top: 18px;
+}
+
+.crew-run-picker {
+  max-width: 320px;
+  margin-bottom: 10px;
+}
+
+.crew-run-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.crew-slash {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crew-slash code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--ink);
+  background: var(--ash);
+  border-radius: 8px;
+  padding: 5px 9px;
+  user-select: text;
+}
+
+.crew-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.crew-run-card {
+  background: var(--ash);
+  border-radius: var(--radius-inner);
+  padding: 12px 14px;
+  animation: side-in 0.35s var(--ease-spring) both;
+}
+
+.crew-run-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.crew-run-when {
+  font-size: 11px;
+  color: var(--smoke);
+}
+
+.crew-run-summary {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--graphite);
+}
+
+.crew-findings {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.crew-finding {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.crew-finding-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.crew-finding-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.crew-finding-detail {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--graphite);
+}
+
+.crew-finding-where {
+  font-size: 10.5px;
+  color: var(--smoke);
+}
+
+/* ---- Verdict & severity pills — the app's existing pass/fail vocabulary
+   (see .evidence.acc-pass / .acc-fail / .badge-gap) applied to agent runs ---- */
+
+.verdict-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  padding: 3px 9px;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--graphite);
+}
+
+.verdict-pass {
+  color: #1e6b3a;
+  background: rgba(30, 164, 92, 0.12);
+}
+
+.verdict-issues {
+  color: #a05a2c;
+  background: rgba(232, 168, 124, 0.22);
+}
+
+.verdict-blocked {
+  color: #a92c2c;
+  background: rgba(214, 62, 62, 0.1);
+}
+
+.severity-tag {
+  flex: none;
+  margin-top: 1px;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: var(--radius-pill);
+  padding: 2px 7px;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--smoke);
+}
+
+.severity-blocker {
+  color: #a92c2c;
+  background: rgba(214, 62, 62, 0.1);
+}
+
+.severity-major {
+  color: #a05a2c;
+  background: rgba(232, 168, 124, 0.22);
+}
+
+/* ---- "Agents of this house" — FolderScreen ---- */
+
+.house-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---- "Agents you can run here" strip + "Agent reports" — Project board tab ---- */
+
+.crew-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.crew-strip-label {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--smoke);
+}
+
+.crew-strip-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.crew-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--paper);
+  box-shadow: var(--glow-ring-thin);
+  border-radius: var(--radius-pill);
+  padding: 5px 6px 5px 10px;
+  font-size: 12px;
+  /* One row per agent, all the same width: the copy buttons line up in a
+     column instead of stepping raggedly with the length of each name. */
+  width: 100%;
+}
+
+.crew-chip > .pill {
+  margin-left: auto;
+}
+
+.crew-chip-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.crew-chip-slash {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  color: var(--smoke);
+  background: var(--ash);
+  border-radius: 50px;
+  padding: 3px 8px;
+}
+
+.crew-reports {
+  margin-top: 26px;
+}
+
+.crew-reports h3 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+
+.crew-reports .crew-run-card {
+  margin-bottom: 0;
+  /* The board's own live-arrival animation (see .spec-card / @keyframes
+     spec-in), staggered the same way — a freshly posted report is exactly as
+     unmissable as a spec that just appeared. */
+  animation: spec-in 0.55s var(--ease-spring) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
 }

@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AgentId, AppSettings, FolderRule, OwnerComment, SpecDriveApi } from '../shared/types'
+import type {
+  AgentDef,
+  AgentId,
+  AgentScope,
+  AppSettings,
+  FolderRule,
+  OwnerComment,
+  SpecDriveApi
+} from '../shared/types'
 
 const api: SpecDriveApi = {
   listProjects: () => ipcRenderer.invoke('projects:list'),
@@ -43,6 +51,18 @@ const api: SpecDriveApi = {
   deleteFolder: (id: string) => ipcRenderer.invoke('folders:delete', id),
   assignProjectFolder: (projectId: string, folderId: string | null) =>
     ipcRenderer.invoke('project:assign-folder', projectId, folderId),
+  listCrew: () => ipcRenderer.invoke('crew:list'),
+  createAgent: (input: Partial<AgentDef> & { preset?: string }) =>
+    ipcRenderer.invoke('crew:create', input),
+  updateAgent: (id: string, patch: Partial<AgentDef>) => ipcRenderer.invoke('crew:update', id, patch),
+  setAgentScope: (id: string, scope: AgentScope, folderId: string | null) =>
+    ipcRenderer.invoke('crew:set-scope', id, scope, folderId),
+  setAgentDisabled: (id: string, folderId: string, off: boolean) =>
+    ipcRenderer.invoke('crew:set-disabled', id, folderId, off),
+  duplicateAgent: (id: string) => ipcRenderer.invoke('crew:duplicate', id),
+  deleteAgent: (id: string) => ipcRenderer.invoke('crew:delete', id),
+  agentBrief: (id: string, projectId: string | null) =>
+    ipcRenderer.invoke('crew:brief', id, projectId),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch: Partial<AppSettings>) => ipcRenderer.invoke('settings:set', patch),
   getAbout: () => ipcRenderer.invoke('app:about'),

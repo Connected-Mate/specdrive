@@ -275,6 +275,80 @@ export interface Folder {
   updatedAt: string
 }
 
+// ---------- the owner's own agents ("crew") ----------
+// Saved team members: created once, available in EVERY project where SpecDrive
+// is connected. Scoped exactly like house rules — everywhere, or attached to a
+// house and inherited by every project inside it. Resolution lives in
+// src/shared/crew-chain.mjs; the files live in ~/.specdrive/crew/<id>.json.
+
+/** Where an agent is available: everywhere, or inside one house and below. */
+export type AgentScope = 'global' | 'house'
+
+export type AgentVerdict = 'pass' | 'issues' | 'blocked' | 'info'
+
+export type FindingSeverity = 'blocker' | 'major' | 'minor' | 'note'
+
+/** One problem an agent reported back after a run. */
+export interface AgentFinding {
+  severity: FindingSeverity
+  title: string
+  detail: string
+  /** Screen, file:line, endpoint — where the owner (or the next agent) looks */
+  where?: string
+}
+
+/** One report an agent posted back through log_agent_run. */
+export interface AgentRun {
+  id: string
+  /** The project it ran on, when it ran on one */
+  projectId?: string
+  projectName?: string
+  verdict: AgentVerdict
+  /** One plain-words paragraph the owner reads first */
+  summary: string
+  findings: AgentFinding[]
+  /** Which coding tool posted it */
+  by?: string
+  at: string
+}
+
+/** A saved team member. The owner creates it once, by talking to their agent,
+ *  and runs it anywhere with /mcp__specdrive__agent_<slug>. */
+export interface AgentDef {
+  /** File id — the slug, suffixed only if that slug was already taken */
+  id: string
+  /** Kebab name used in the MCP prompt (agent_<slug>) and the exported file */
+  slug: string
+  name: string
+  /** One or two emoji — the agent's face on its card */
+  emoji: string
+  /** One line: what it does */
+  role: string
+  /** What it is for, in the owner's own terms */
+  mission: string
+  /** The MUST list — binding on every run */
+  rules: string[]
+  /** How it works, in order */
+  method: string[]
+  /** What it hands back at the end */
+  deliverable: string
+  /** Suggested tools, plain words */
+  tools: string[]
+  /** Suggested model, e.g. "opus" — only ever a hint */
+  modelHint?: string
+  scope: AgentScope
+  /** Set when scope is "house": the house it belongs to */
+  folderId?: string
+  /** Houses that switched this inherited agent off */
+  disabledIn?: string[]
+  /** The ready-made agent it was created from, if any */
+  preset?: string
+  /** Its reports, newest first, capped at 50 */
+  runs: AgentRun[]
+  createdAt: string
+  updatedAt: string
+}
+
 /** One area of the product the agent decided this SHAPE of product must have
  *  an answer for (business model, platform rules, auth, payments…). The agent
  *  derives the list itself from the project's shape; the board tracks whether
@@ -342,6 +416,9 @@ export interface ProjectBundle {
   houseChain?: Folder[]
   /** Owner comments on cards — written by the app, resolved by the agent via MCP */
   comments?: OwnerComment[]
+  /** The crew that can be run on this project: everywhere-agents plus every
+   *  house above it, closest house winning on a shared slug. */
+  agents?: import('./crew-chain.mjs').EffectiveAgent[]
   /** Has the codebase moved since the last verified build step? null = unknown/not applicable */
   drift?: { moved: boolean; commits: number } | null
 }
@@ -496,6 +573,27 @@ export interface SpecDriveApi {
   deleteFolder(id: string): Promise<string>
   /** Put a project in a folder, or pass null to take it out. '' on success. */
   assignProjectFolder(projectId: string, folderId: string | null): Promise<string>
+  // ----- the owner's own agents (the same writes agents make over MCP) -----
+  /** Every saved agent, newest first. */
+  listCrew(): Promise<AgentDef[]>
+  /** Create an agent from scratch, or from a ready-made one (`preset`).
+   *  Returns the new agent's id, or a plain-words error to show the owner. */
+  createAgent(
+    input: Partial<AgentDef> & { preset?: string }
+  ): Promise<{ id: string; error: string }>
+  /** Change any field of an agent in place. '' on success. */
+  updateAgent(id: string, patch: Partial<AgentDef>): Promise<string>
+  /** Make it available everywhere, or attach it to one house. '' on success. */
+  setAgentScope(id: string, scope: AgentScope, folderId: string | null): Promise<string>
+  /** Switch an inherited agent off inside one house (or back on). '' on success. */
+  setAgentDisabled(id: string, folderId: string, off: boolean): Promise<string>
+  /** Copy an agent, name and all, to edit without touching the original. */
+  duplicateAgent(id: string): Promise<{ id: string; error: string }>
+  /** Move an agent to the trash. '' on success. */
+  deleteAgent(id: string): Promise<string>
+  /** The runnable brief for this agent on this project — the same text the MCP
+   *  server hands a coding agent, ready to copy-paste. */
+  agentBrief(id: string, projectId: string | null): Promise<string>
   // ----- preferences, updates and data location -----
   getSettings(): Promise<AppSettings>
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>

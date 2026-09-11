@@ -3,12 +3,14 @@ import type { Folder, FolderRule, ProjectBundle } from '@shared/types'
 import { FOLDER_PROMPT, FOLDER_REVIEW_PROMPT, fillFolderPrompt } from '@shared/prompts'
 import { houseChain, rulesByHouse } from '@shared/house-chain.mjs'
 import type { EffectiveRule } from '@shared/house-chain.mjs'
+import { agentsForHouse } from '@shared/crew-chain.mjs'
+import type { EffectiveAgent } from '@shared/crew-chain.mjs'
 import { FolderEditor } from '@/components/FolderEditor'
 import { CopyButton, PromptPeek } from '@/components/PromptCopy'
 import { FolderIcon, PencilIcon } from '@/components/Icons'
 import { PHASE_COLOR } from '@/lib/phaseColors'
 import { ruleProvenance } from '@/lib/labels'
-import { useFolders, useMcpInfo } from '@/lib/useLive'
+import { useCrew, useFolders, useMcpInfo } from '@/lib/useLive'
 import { useToast } from '@/components/Toast'
 
 // A house has its own page, exactly like a project — because it IS the same
@@ -170,6 +172,67 @@ function RuleCard({
   )
 }
 
+/** One of this house's crew — its own, or inherited from a house above it.
+ *  Own agents open in the Agents screen to be edited; an inherited one can
+ *  only be switched off for this house, exactly like a rule can be replaced. */
+function HouseAgentCard({
+  agent,
+  i,
+  own,
+  onOpen,
+  onToggle
+}: {
+  agent: EffectiveAgent
+  i: number
+  own: boolean
+  onOpen: () => void
+  onToggle: () => void
+}): React.JSX.Element {
+  return (
+    <article
+      className={`spec-card house-rule${agent.supersededBy ? ' replaced' : ''}${agent.disabled ? ' replaced' : ''}${own ? ' editable' : ''}`}
+      style={{ '--i': i } as React.CSSProperties}
+      role={own ? 'button' : undefined}
+      tabIndex={own ? 0 : undefined}
+      onClick={own ? onOpen : undefined}
+      onKeyDown={
+        own
+          ? (e) => {
+              if (e.key === 'Enter') onOpen()
+            }
+          : undefined
+      }
+    >
+      <div className="house-agent-row">
+        <span aria-hidden style={{ fontSize: 16 }}>
+          {agent.emoji}
+        </span>
+        <h4>{agent.name}</h4>
+      </div>
+      <div className="content-md">
+        <p>{agent.role}</p>
+      </div>
+      <div className="foot">
+        {!own && <span className="house-rule-prov">{agent.from}</span>}
+        {agent.disabled && <span className="badge">turned off here</span>}
+        {agent.supersededBy && <span className="badge">replaced in {agent.supersededByHouse}</span>}
+        {own && !agent.disabled && !agent.supersededBy && <span className="house-rule-hint">Click to edit</span>}
+        {!own && !agent.supersededBy && (
+          <button
+            className="house-rule-override"
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggle()
+            }}
+          >
+            {agent.disabled ? 'Turn back on' : 'Turn off here'}
+          </button>
+        )}
+      </div>
+    </article>
+  )
+}
+
 /** The brand-new-house moment: hand the prompt to your agent, exactly like a
  *  brand-new idea. Writing the rules by hand is the quiet second path. */
 function NewHouse({
@@ -236,7 +299,8 @@ export function FolderScreen({
   onCreated,
   onGone,
   onOpenFolder,
-  onOpenProject
+  onOpenProject,
+  onOpenAgent
 }: {
   /** null = a brand-new house */
   folder: Folder | null
@@ -249,8 +313,11 @@ export function FolderScreen({
   onOpenFolder?: (id: string) => void
   /** Jump to a project living in this house */
   onOpenProject?: (id: string) => void
+  /** Jump to the Agents screen, with this agent open */
+  onOpenAgent?: (id: string) => void
 }): React.JSX.Element {
   const { folders } = useFolders()
+  const { crew } = useCrew()
   const mcp = useMcpInfo()
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -282,6 +349,32 @@ export function FolderScreen({
     () => groups.reduce((n, g) => n + g.rules.filter((r) => !r.supersededBy).length, 0),
     [groups]
   )
+  // This house's crew: its own agents, then what it inherits, nearest house
+  // first — the exact same shape the rules section reads.
+  const houseAgents = useMemo(
+    () => (folder ? agentsForHouse(folder.id, readFolder, crew) : []),
+    [folder, readFolder, crew]
+  )
+  const ownAgents = useMemo(() => houseAgents.filter((a) => a.houseId === folder?.id), [houseAgents, folder])
+  const everywhereAgents = useMemo(() => houseAgents.filter((a) => a.houseId === null), [houseAgents])
+  const inheritedAgentGroups = useMemo(() => {
+    if (!folder) return []
+    return chain
+      .filter((f) => f.id !== folder.id)
+      .slice()
+      .reverse()
+      .map((f) => ({ folder: f, agents: houseAgents.filter((a) => a.houseId === f.id) }))
+      .filter((g) => g.agents.length > 0)
+  }, [chain, folder, houseAgents])
+  const toggleAgent = async (agent: EffectiveAgent): Promise<void> => {
+    if (!folder) return
+    const err = await window.specdrive.setAgentDisabled(agent.id, folder.id, !agent.disabled)
+    if (err) {
+      toast(err)
+      return
+    }
+    toast(agent.disabled ? `“${agent.name}” switched back on for ${folder.name}` : `“${agent.name}” switched off for ${folder.name}`)
+  }
   const inside = useMemo(
     () => (folder ? projects.filter((p) => p.project.folderId === folder.id) : []),
     [projects, folder]
@@ -547,6 +640,59 @@ export function FolderScreen({
                   </section>
                 )
               })}
+
+              {(ownAgents.length > 0 || everywhereAgents.length > 0 || inheritedAgentGroups.length > 0) && (
+                <section className="house-group">
+                  <div className="house-group-head">
+                    <h3>Agents of this house</h3>
+                    <span className="house-group-note">
+                      Everyone your agent can run on a project inside this house — its own, plus
+                      everything it inherits. Edit or add more from the Agents screen.
+                    </span>
+                  </div>
+                  <div className="house-rules">
+                    {ownAgents.map((a, i) => (
+                      <HouseAgentCard
+                        key={a.id}
+                        agent={a}
+                        i={i}
+                        own
+                        onOpen={() => onOpenAgent?.(a.id)}
+                        onToggle={() => void toggleAgent(a)}
+                      />
+                    ))}
+                    {everywhereAgents.map((a, i) => (
+                      <HouseAgentCard
+                        key={a.id}
+                        agent={a}
+                        i={ownAgents.length + i}
+                        own={false}
+                        onOpen={() => onOpenAgent?.(a.id)}
+                        onToggle={() => void toggleAgent(a)}
+                      />
+                    ))}
+                  </div>
+                  {inheritedAgentGroups.map((g) => (
+                    <div key={g.folder.id} className="house-group" style={{ marginTop: 16 }}>
+                      <div className="house-group-head">
+                        <h3>Inherited from {g.folder.name}</h3>
+                      </div>
+                      <div className="house-rules">
+                        {g.agents.map((a, i) => (
+                          <HouseAgentCard
+                            key={a.id}
+                            agent={a}
+                            i={i}
+                            own={false}
+                            onOpen={() => onOpenAgent?.(a.id)}
+                            onToggle={() => void toggleAgent(a)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              )}
 
               <section className="house-group">
                 <div className="house-group-head">

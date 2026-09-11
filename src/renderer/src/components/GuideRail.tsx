@@ -8,6 +8,7 @@ import {
   REFINE_SPECS_PROMPT,
   FOLDER_PROMPT,
   FOLDER_REVIEW_PROMPT,
+  INTEGRATE_AGENT_PROMPT,
   PHASE_PROMPTS,
   START_PROMPT,
   fillFolderPrompt,
@@ -175,16 +176,49 @@ export type FolderView = { kind: 'new' } | { kind: 'existing'; folder: Folder }
 
 export function GuideRail({
   bundle,
-  folderView = null
+  folderView = null,
+  crewView = false
 }: {
   bundle: ProjectBundle | null
   /** A folder screen is open — the rail hands over the folder prompt instead */
   folderView?: FolderView | null
+  /** The Agents screen is open — the rail hands over the agent prompt instead */
+  crewView?: boolean
 }): React.JSX.Element {
   const toast = useToast()
   const sessions = useLiveSessions()
   const mcp = useMcpInfo()
   const [startMode, setStartMode] = useState<'new' | 'existing'>('new')
+
+  // The Agents screen has its own next step: an agent is written by TALKING,
+  // never by filling a form, so the rail hands over that prompt — offering
+  // "tell your idea" here would send the owner to the wrong place entirely.
+  if (crewView) {
+    const text = fillPrompt(INTEGRATE_AGENT_PROMPT, '', undefined, mcp)
+    return (
+      <aside className="rail">
+        <div className="rail-drag" />
+        <div className="rail-body">
+          <LiveSessionCard sessions={sessions} />
+          <div className="next-step">
+            <span className="rail-mini-label">Your agents</span>
+            <h2>Create one by talking</h2>
+            <p className="how">
+              Copy this prompt, paste it into a connected AI agent, and say what you want your agent
+              to do for you. It asks four simple questions, writes the brief for you, and saves it
+              here. Or start from a ready-made one on the left and change what you like.
+            </p>
+            <CopyButton text={text} label="Copy the prompt" />
+            <PromptPeek text={text} />
+            <p className="how faded" style={{ marginTop: 14 }}>
+              An agent you save once is available in every project: type its command in your AI
+              agent and it runs with all its rules. Whatever it finds comes back here as a report.
+            </p>
+          </div>
+        </div>
+      </aside>
+    )
+  }
 
   if (folderView) {
     const isNew = folderView.kind === 'new'

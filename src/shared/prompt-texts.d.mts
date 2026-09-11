@@ -13,3 +13,5 @@ export const DEEP_DIVE_PROMPT: string
 export const FOLDER_PROMPT: string
 export const FOLDER_REVIEW_PROMPT: string
 export const REFINE_SPECS_PROMPT: string
+export const INTEGRATE_AGENT_PROMPT: string
+export const RUN_AGENT_PROMPT: string

@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react'
 import type { DetectedAgent, Folder, ProjectBundle } from '@shared/types'
 import { useToast } from './Toast'
 import { PHASE_COLOR } from '@/lib/phaseColors'
-import { FolderIcon, FolderPlusIcon, GearIcon, PlusIcon } from './Icons'
-import { timeAgo, useFolders } from '@/lib/useLive'
+import { CrewIcon, FolderIcon, FolderPlusIcon, GearIcon, PlusIcon } from './Icons'
+import { timeAgo, useCrew, useFolders } from '@/lib/useLive'
 import { canParent, chainLabel, houseChain } from '@shared/house-chain.mjs'
 import { AgentsPanel } from './AgentsPanel'
 
@@ -33,7 +33,9 @@ export function Sidebar({
   onOpenSettings,
   settingsOpen,
   onOpenFolder,
-  activeFolderId
+  activeFolderId,
+  onOpenCrew,
+  crewActive
 }: {
   projects: ProjectBundle[]
   agents: DetectedAgent[]
@@ -47,8 +49,12 @@ export function Sidebar({
   /** Open a house page: an existing folder's id, or 'new' for a blank one */
   onOpenFolder: (id: string | 'new') => void
   activeFolderId: string | 'new' | null
+  /** Open the Agents (crew) screen */
+  onOpenCrew: () => void
+  crewActive: boolean
 }): React.JSX.Element {
   const toast = useToast()
+  const { crew } = useCrew()
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [confirmDeleteFolder, setConfirmDeleteFolder] = useState<string | null>(null)
   // Which project's "put it in a folder" menu is open, if any.
@@ -432,6 +438,17 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-foot">
+        <button
+          className={`sidebar-settings${crewActive ? ' active' : ''}`}
+          title="Your own agents — saved once, ready in every project"
+          aria-label="Open Agents"
+          aria-pressed={crewActive}
+          onClick={onOpenCrew}
+        >
+          <CrewIcon />
+          <span>Agents</span>
+          {crew.length > 0 && <span className="side-folder-rules">{crew.length}</span>}
+        </button>
         <button
           className={`sidebar-settings${settingsOpen ? ' active' : ''}`}
           title="Settings (⌘,)"

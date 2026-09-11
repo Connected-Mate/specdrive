@@ -12,7 +12,9 @@ import {
   DEEP_DIVE_PROMPT,
   FOLDER_PROMPT,
   FOLDER_REVIEW_PROMPT,
-  REFINE_SPECS_PROMPT
+  REFINE_SPECS_PROMPT,
+  INTEGRATE_AGENT_PROMPT,
+  RUN_AGENT_PROMPT
 } from './prompt-texts.mjs'
 
 // The copy-paste prompts SpecDrive hands the user at each step of the loop.
@@ -27,7 +29,9 @@ export {
   DEEP_DIVE_PROMPT,
   FOLDER_PROMPT,
   FOLDER_REVIEW_PROMPT,
-  REFINE_SPECS_PROMPT
+  REFINE_SPECS_PROMPT,
+  INTEGRATE_AGENT_PROMPT,
+  RUN_AGENT_PROMPT
 }
 
 /** First line of every prompt — a non-technical owner cannot tell a role-played

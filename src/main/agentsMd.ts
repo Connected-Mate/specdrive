@@ -3,11 +3,16 @@
 // Pure rendering lives here so it can be unit-tested without Electron.
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Folder, FolderRule, Phase, ProjectBundle, Spec } from '../shared/types'
+import type { AgentDef, Folder, FolderRule, Phase, ProjectBundle, Spec } from '../shared/types'
 // Houses nest: a project inherits every house above it, closest house winning
 // on a shared rule name. One shared module decides that, everywhere.
-import { effectiveRules } from '../shared/house-chain.mjs'
+import { chainLabel, effectiveRules } from '../shared/house-chain.mjs'
 import type { EffectiveRule } from '../shared/house-chain.mjs'
+// The owner's own agents travel with the board: named in AGENTS.md, and written
+// out as Claude Code subagents next to the code.
+import { composeBrief, houseRulesForBrief, promptNameFor } from '../shared/crew-chain.mjs'
+import type { EffectiveAgent } from '../shared/crew-chain.mjs'
+import { syncClaudeAgents } from '../shared/crew-export.mjs'
 
 const PHASE_LABEL: Record<Phase, string> = {
   capture: 'Capturing the idea',
@@ -95,6 +100,27 @@ function currentStateSection(bundle: ProjectBundle): string {
   return lines.join('\n')
 }
 
+/** The agents that actually reach this project: the ones available everywhere
+ *  plus every house above it, minus the ones a house switched off and the ones
+ *  a closer house replaced. */
+function liveAgents(bundle: ProjectBundle): EffectiveAgent[] {
+  return (bundle.agents ?? []).filter((a) => !a.disabled && !a.supersededBy)
+}
+
+/** The owner's own team members, and the exact command that runs each one. */
+function yourAgentsSection(bundle: ProjectBundle): string {
+  const agents = liveAgents(bundle)
+  if (!agents.length) return 'No agents saved yet.'
+  return agents
+    .map(
+      (a) =>
+        `- **${a.emoji} ${a.name}** — ${a.role} (${
+          a.from && a.from !== 'Everywhere' ? `from the house "${a.from}"` : 'available everywhere'
+        }) → run it with \`/mcp__specdrive__${promptNameFor(a.slug)}\``
+    )
+    .join('\n')
+}
+
 /** Title-only list of things this AGENTS.md export says "do not touch" without
  *  explicit new instruction: frozen or as-built areas the house has verified. */
 function whatNotToTouchSection(specs: Spec[]): string {
@@ -123,6 +149,10 @@ ${standingRulesSection(bundle)}
 ## Current state
 ${currentStateSection(bundle)}
 
+## Your agents
+The owner's own saved agents, available on this project. Each one is a standing brief — run it and follow it exactly, then report back with \`log_agent_run\`.
+${yourAgentsSection(bundle)}
+
 ## What not to touch
 ${whatNotToTouchSection(bundle.specs)}
 
@@ -138,6 +168,41 @@ export interface AgentsMdSyncResult {
   path?: string
   skipped?: 'no-codebase-path' | 'path-missing' | 'opted-out' | 'unchanged'
   claudeMdWritten?: boolean
+  /** Claude Code subagent files written / removed under .claude/agents */
+  agentFiles?: { wrote: string[]; removed: string[] }
+}
+
+/** The composed brief of every live agent, for the .claude/agents export. Pure:
+ *  the houses come from the bundle, exactly like the standing rules do, so this
+ *  never reads the disk. The language line is left out — a subagent file is
+ *  read as a role, not sent as a message. */
+function agentBriefs(bundle: ProjectBundle): { agent: AgentDef; brief: string }[] {
+  const agents = liveAgents(bundle)
+  if (!agents.length) return []
+  const chain: Folder[] =
+    bundle.houseChain && bundle.houseChain.length ? bundle.houseChain : bundle.folder ? [bundle.folder] : []
+  const readFolder = (id: string | null | undefined): Folder | null =>
+    chain.find((f) => f.id === id) ?? null
+  const ownId = chain.length ? chain[chain.length - 1].id : ''
+  const houseRules = ownId ? houseRulesForBrief(ownId, readFolder) : ''
+  const houseAddress = chain.length ? chainLabel(chain) : ''
+  const { project } = bundle
+  return agents.map((agent) => ({
+    agent,
+    brief: composeBrief(agent, {
+      project: {
+        id: project.id,
+        name: project.name,
+        oneLiner: project.oneLiner,
+        phase: project.phase,
+        codebasePath: project.codebasePath,
+        mode: project.mode
+      },
+      houseRules,
+      houseAddress,
+      includeLanguageLine: false
+    })
+  }))
 }
 
 /** Writes AGENTS.md (and a first-run CLAUDE.md stub) into one project's
@@ -170,7 +235,16 @@ export function syncOneAgentsMd(bundle: ProjectBundle): AgentsMdSyncResult {
     claudeMdWritten = true
   }
 
-  return { wrote, path: target, skipped: wrote ? undefined : 'unchanged', claudeMdWritten }
+  // The crew also lands as Claude Code subagents, so `claude` picks them up
+  // natively. Only ever SpecDrive's own files are written or removed there.
+  let agentFiles
+  try {
+    agentFiles = syncClaudeAgents(dir, agentBriefs(bundle))
+  } catch {
+    // an unwritable .claude folder must never block the AGENTS.md export
+  }
+
+  return { wrote, path: target, skipped: wrote ? undefined : 'unchanged', claudeMdWritten, agentFiles }
 }
 
 /** Sync every bundle that has a codebase path. Each project is isolated —

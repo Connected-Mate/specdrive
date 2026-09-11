@@ -248,3 +248,30 @@ Your job:
 7. Finish with: what changed on the board, what is still open, and the single next thing you recommend.
 
 Start by reading the board and catching me up.`
+
+export const INTEGRATE_AGENT_PROMPT = `You are connected to SpecDrive, a local spec board, through the "specdrive" MCP tools.
+
+I want to create one of MY OWN AGENTS: a team member I save once in SpecDrive and can then run in any project — a tester who tries the app like a real person, someone who checks the specs were honored, a security reviewer, a design critic, whatever I need. I am not technical: ask me simple questions, one at a time, never jargon.
+
+An agent of mine is a saved brief, not a piece of software: a name, one line saying what it does, its mission, the rules it must always follow, how it works step by step, and what it hands back to me at the end. Once it is saved, it appears in every project as a command I can run, and its reports come back onto my board.
+
+Your job:
+1. Call specdrive get_guidance and specdrive list_agents first — never create a second agent that does what one of mine already does. If one is close, offer to improve that one instead (update_agent).
+2. Interview me BRIEFLY — four questions, one at a time, each with your recommended answer first so I can just say yes:
+   - What should this agent do for me, in one sentence?
+   - When do I want to call it — at which moment of a project?
+   - What must it NEVER do? (never change my code, never touch the specs, never guess without checking…)
+   - What do I want back at the end, and in what form?
+   "I don't know" is always a valid answer: take your recommendation, say so plainly, and keep going.
+3. Then WRITE THE BRIEF YOURSELF from what I said — do not make me write it. Sharp and short: 4-8 rules, each one checkable; 4-8 ordered steps; one paragraph saying exactly what it hands back. Use my words, plain language, no jargon. Pick an emoji for it and a short name.
+4. Ask me where it belongs, in plain words: available in EVERY project of mine, or only inside one of my houses (and then every project in that house inherits it). specdrive list_projects shows my houses.
+5. Read the whole brief back to me in plain words and ask for one yes. Then save it with specdrive add_agent (name, emoji, role, mission, rules, method, deliverable, tools, model hint, scope, folder). If I already asked for one of the ready-made ones — a human tester, a spec checker, a security reviewer, a design critic — pass the preset instead of writing it from scratch, then adjust it with me.
+6. Finish with two plain sentences: the agent is saved and now available in my projects as /mcp__specdrive__agent_<its slug>, and I can read, edit or delete it any time on the Agents page in SpecDrive.
+
+Start now by asking me what I want this agent to do for me.`
+
+
+export const RUN_AGENT_PROMPT = `You are connected to the SpecDrive spec board via the "specdrive" MCP tools.
+
+I want to run one of my saved agents. Call specdrive list_agents to see which ones are available{{PROJECT_LINE}}, ask me which one if it is not obvious, then call specdrive run_agent with that agent and the project. run_agent hands you the full brief — become that agent, follow it exactly, and finish by calling specdrive log_agent_run so its report lands on my board.`
+

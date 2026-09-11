@@ -31,11 +31,26 @@ import {
   assignProjectFolder,
   FOLDERS_DIR
 } from './store'
+import {
+  CREW_DIR,
+  agentBrief,
+  attachCrew,
+  attachCrewOne,
+  createAgent,
+  crewHouseOptions,
+  deleteAgent,
+  duplicateAgent,
+  ensureCrewDir,
+  listCrew,
+  setAgentDisabled,
+  setAgentScope,
+  updateAgent
+} from './crew'
 import { readSettings, writeSettings } from './settings'
 import { syncAllAgentsMd } from './agentsMd'
 import { initUpdater, checkForUpdatesInteractive } from './updater'
 import { checkForNotifications } from './notify'
-import type { AgentId, AppSettings, FolderRule, OwnerComment } from '../shared/types'
+import type { AgentDef, AgentId, AgentScope, AppSettings, FolderRule, OwnerComment } from '../shared/types'
 import type { PresetKey } from '../shared/folder-presets.mjs'
 
 const isDev = !app.isPackaged
@@ -91,11 +106,15 @@ function createWindow(): void {
       }
       const tab = process.env.SPECDRIVE_TAB
       if (tab) {
-        setTimeout(() => {
-          win?.webContents.executeJavaScript(
-            `window.dispatchEvent(new CustomEvent('specdrive:open-tab', { detail: ${JSON.stringify(tab)} }))`
-          )
-        }, 800)
+        // Twice: the first list of projects can take a second to arrive, so the
+        // screen that listens for this may not exist yet on the first try.
+        for (const at of [800, 1800]) {
+          setTimeout(() => {
+            win?.webContents.executeJavaScript(
+              `window.dispatchEvent(new CustomEvent('specdrive:open-tab', { detail: ${JSON.stringify(tab)} }))`
+            )
+          }, at)
+        }
       }
       setTimeout(async () => {
         const scroll = Number(process.env.SPECDRIVE_SCROLL ?? 0)
@@ -119,6 +138,10 @@ function createWindow(): void {
           console.log('DEBUG_CLICK', JSON.stringify(dbg))
           await new Promise((r) => setTimeout(r, 2500))
         }
+        // Entry animations are part of the design: give them time to finish, or
+        // every automated check photographs a half-faded screen.
+        const settle = Number(process.env.SPECDRIVE_SHOT_DELAY ?? 0)
+        if (settle) await new Promise((r) => setTimeout(r, settle))
         const img = await win!.webContents.capturePage()
         const fs = await import('node:fs')
         fs.writeFileSync(shotPath, img.toPNG())
@@ -192,10 +215,10 @@ app.whenReady().then(() => {
   }
   const serverPath = mcpServerPath(__dirname, app.isPackaged)
 
-  ipcMain.handle('projects:list', () => listBundles())
+  ipcMain.handle('projects:list', () => attachCrew(listBundles()))
   ipcMain.handle('sessions:list', () => listSessions())
   ipcMain.handle('mcp:info', async () => ({ serverPath, nodeBin: await nodeBinPath() }))
-  ipcMain.handle('projects:get', (_e, id: string) => loadBundle(id))
+  ipcMain.handle('projects:get', (_e, id: string) => attachCrewOne(loadBundle(id)))
   ipcMain.handle('projects:delete', (_e, id: string) => deleteProject(id))
   ipcMain.handle('wireframe:read', (_e, projectId: string, file: string) =>
     readWireframe(projectId, file)
@@ -275,6 +298,44 @@ app.whenReady().then(() => {
     return err
   })
 
+  // The owner's own agents — the same writes an agent makes over MCP, done by
+  // the owner in the app. Every one returns a plain-words error string.
+  ipcMain.handle('crew:list', () => listCrew())
+  ipcMain.handle('crew:houses', () => crewHouseOptions())
+  ipcMain.handle('crew:create', (_e, input: Partial<AgentDef> & { preset?: string }) => {
+    const r = createAgent(input)
+    if (!r.error) scheduleAgentsMdSync()
+    return r
+  })
+  ipcMain.handle('crew:update', (_e, id: string, patch: Partial<AgentDef>) => {
+    const err = updateAgent(id, patch)
+    if (!err) scheduleAgentsMdSync()
+    return err
+  })
+  ipcMain.handle('crew:set-scope', (_e, id: string, scope: AgentScope, folderId: string | null) => {
+    const err = setAgentScope(id, scope, folderId)
+    if (!err) scheduleAgentsMdSync()
+    return err
+  })
+  ipcMain.handle('crew:set-disabled', (_e, id: string, folderId: string, off: boolean) => {
+    const err = setAgentDisabled(id, folderId, off)
+    if (!err) scheduleAgentsMdSync()
+    return err
+  })
+  ipcMain.handle('crew:duplicate', (_e, id: string) => {
+    const r = duplicateAgent(id)
+    if (!r.error) scheduleAgentsMdSync()
+    return r
+  })
+  ipcMain.handle('crew:delete', (_e, id: string) => {
+    const err = deleteAgent(id)
+    if (!err) scheduleAgentsMdSync()
+    return err
+  })
+  ipcMain.handle('crew:brief', (_e, id: string, projectId: string | null) =>
+    agentBrief(id, projectId ? loadBundle(projectId) : null)
+  )
+
   ipcMain.handle('settings:get', () => readSettings())
   ipcMain.handle('settings:set', (_e, patch: Partial<AppSettings>) => {
     const next = writeSettings(patch)
@@ -297,7 +358,8 @@ app.whenReady().then(() => {
   })
 
   // Live updates: the MCP server writes files; we push a change signal to the UI.
-  const watcher = chokidar.watch([PROJECTS_DIR, path.join(DATA_DIR, 'sessions'), FOLDERS_DIR], {
+  ensureCrewDir()
+  const watcher = chokidar.watch([PROJECTS_DIR, path.join(DATA_DIR, 'sessions'), FOLDERS_DIR, CREW_DIR], {
     ignoreInitial: true,
     ignored: (p) => /\.tmp$|\.lock$|\.bak$|\.DS_Store$|\.corrupt-/.test(p),
     awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 40 },
@@ -321,7 +383,8 @@ app.whenReady().then(() => {
       // A project that has never been told either way inherits the owner's
       // preference — once, explicitly, so its own toggle always tells the truth.
       applyAgentsMdDefault(readSettings().agentsMdForNewProjects)
-      syncAllAgentsMd(listBundles())
+      // The export carries the crew too (AGENTS.md section + .claude/agents).
+      syncAllAgentsMd(attachCrew(listBundles()))
     }, 2000)
   }
   watcher.on('all', () => {
