@@ -25,8 +25,9 @@ import {
   , HOUSE_BRIEFING_TEMPLATE
 } from '../src/shared/prompt-texts.mjs'
 import { execFileSync, execFile } from 'node:child_process'
+import { registerAgentAuditTools } from './agent-audit-tools.mjs'
 
-const DATA_DIR = path.join(os.homedir(), '.specdrive')
+const DATA_DIR = process.env.SPECDRIVE_DATA_DIR || path.join(os.homedir(), '.specdrive')
 const PROJECTS_DIR = path.join(DATA_DIR, 'projects')
 const FOLDERS_DIR = path.join(DATA_DIR, 'folders')
 
@@ -3555,6 +3556,7 @@ server.registerPrompt(
     promptResult(`Deep dive: ${topic}`, fillPrompt(DEEP_DIVE_PROMPT, project, topic))
 )
 
+registerAgentAuditTools(server)
 ensureDirs()
 // Defensive: a session must never start with a tool surface out of sync with
 // the board (or with a tool wrongly disabled after a crash mid-phase).

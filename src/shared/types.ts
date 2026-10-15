@@ -364,6 +364,7 @@ export interface AgentVerification {
 // ---------- IPC contract (preload bridge) ----------
 
 export interface SpecDriveApi {
+  agentAudit: import('./audit-types').AgentAuditApi
   listProjects(): Promise<ProjectBundle[]>
   listSessions(): Promise<LiveSession[]>
   /** Paths the starter prompt needs so an agent can self-install the MCP */

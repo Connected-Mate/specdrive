@@ -2,6 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AgentId, OwnerComment, SpecDriveApi } from '../shared/types'
 
 const api: SpecDriveApi = {
+  agentAudit: {
+    list: () => ipcRenderer.invoke('audit:list'),
+    targets: () => ipcRenderer.invoke('audit:targets'),
+    readTarget: (targetPath) => ipcRenderer.invoke('audit:read-target', targetPath),
+    chooseTarget: () => ipcRenderer.invoke('audit:choose-target'),
+    apply: (id, decisions, expectedUpdatedAt) => ipcRenderer.invoke('audit:apply', id, decisions, expectedUpdatedAt)
+  },
   listProjects: () => ipcRenderer.invoke('projects:list'),
   listSessions: () => ipcRenderer.invoke('sessions:list'),
   getMcpInfo: () => ipcRenderer.invoke('mcp:info'),

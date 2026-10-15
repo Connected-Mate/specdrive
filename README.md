@@ -26,6 +26,20 @@ The loop never really ends: new ideas become new specs, new tasks, new builds.
 
 SpecDrive is the house where any coding agent comes to read the rules and drive the project — not just one agent's memory. The MCP server is the single write path: every spec, task and decision goes through it, so the board stays the one source of truth no matter which tool is talking to it. For agents that can't speak MCP, SpecDrive also exports a generated, read-only `AGENTS.md` straight into the project's codebase — regenerated automatically, never hand-edited. Every standing rule carries provenance (who set it, when, and whether the owner approved it), and nothing an agent proposes becomes binding until the owner says so.
 
+## Personalize your agent
+
+Open **Personnaliser mon agent** in the sidebar and copy the audit prompt into your MCP-capable agent. Your `CLAUDE.md` / `AGENTS.md` occupies the full-height document pane; one side pane connects recurring feedback to proposed instructions. Select a finding, inspect its quoted evidence, edit the suggested text directly in the document, then retain or ignore it. The single main action applies the retained changes. File selection, past analyses, source coverage and timing details are grouped under **…**. The original is backed up; an externally changed target or overlapping replacements block application.
+
+The agent provides the interpretation; SpecDrive checks quoted text and message references against captured conversation snapshots. Outcomes distinguish a delivery **declared by the agent**, **validated by the user**, and **unknown**. Times are calculated from source timestamps and include human pauses; they are not active work time or a model quality benchmark. The Studio labels captured conversations separately from analyzed requests.
+
+This first version reads bounded local histories (`~/.claude/projects`, Codex `sessions` and `archived_sessions`), up to 100 recent sessions by default, and discloses unavailable or omitted sources. It does **not** retrieve cloud-only Claude/ChatGPT conversations, import exports, or claim access to all past chats. Local transcript formats are version dependent. The prompt asks the agent to disclose any conversations it did not finish reading. Conversation excerpts pass to the agent you run the prompt in; SpecDrive itself does not call a model API.
+
+Audit snapshots stay under `~/.specdrive/agent-audits`. A backup is saved beside the instruction file as `<filename>.specdrive-<audit-id>.bak`. The MCP tools (`start_agent_audit`, `read_agent_audit_session`, `get_agent_audit`, `submit_agent_audit`) can create proposals but cannot apply them. Generated SpecDrive `AGENTS.md` exports remain owned by the project board. Codex's personal instructions use its configured `CODEX_HOME` when present; `AGENTS.override.md` takes precedence, as explained in the [official instructions guide](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
+
+For isolated development and tests, `SPECDRIVE_DATA_DIR` selects the board/audit store and `SPECDRIVE_HISTORY_HOME` selects a fixture home containing `.claude` / `.codex`. The latter takes precedence over `CODEX_HOME` for audit reads. No real instruction files are needed for tests.
+
+To open a working Studio demo with fictional conversations, run `npm run build` then `node scripts/agent-studio-demo.mjs`. It uses a fresh temporary data store and Electron profile. Add `--screenshot /absolute/path/preview.png` to capture the view and exit. The demo never scans personal conversation logs or changes personal instruction files.
+
 ## Run it
 
 ```bash

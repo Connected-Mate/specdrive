@@ -19,8 +19,11 @@ import { syncAllAgentsMd } from './agentsMd'
 import { initUpdater, checkForUpdatesInteractive } from './updater'
 import { checkForNotifications } from './notify'
 import type { AgentId, OwnerComment } from '../shared/types'
+import { listAudits, auditTargets, chooseAuditTarget, applyAuditFromApp, readAuditTarget } from './agentAudit'
+import type { AuditDecision } from '../shared/audit-types'
 
 const isDev = !app.isPackaged
+if (isDev && process.env.SPECDRIVE_USER_DATA_DIR) app.setPath('userData', process.env.SPECDRIVE_USER_DATA_DIR)
 
 let win: BrowserWindow | null = null
 
@@ -49,6 +52,11 @@ function createWindow(): void {
   win.on('enter-full-screen', () => sendFs(true))
   win.on('leave-full-screen', () => sendFs(false))
   win.webContents.on('did-finish-load', () => sendFs(win?.isFullScreen() ?? false))
+  if (isDev && process.env.SPECDRIVE_STUDIO_DEMO === '1') {
+    win.webContents.on('did-finish-load', () => {
+      setTimeout(() => win?.webContents.executeJavaScript("window.dispatchEvent(new CustomEvent('specdrive:open-project', { detail: '__agent-studio__' }))"), 800)
+    })
+  }
 
   // Dev utility: SPECDRIVE_SHOT=/path.png [SPECDRIVE_ROUTE=projectId] captures a
   // screenshot of the app and exits — used for automated visual checks.
@@ -175,6 +183,11 @@ app.whenReady().then(() => {
   const serverPath = mcpServerPath(__dirname, app.isPackaged)
 
   ipcMain.handle('projects:list', () => listBundles())
+  ipcMain.handle('audit:list', () => listAudits())
+  ipcMain.handle('audit:targets', () => auditTargets())
+  ipcMain.handle('audit:read-target', (_e, targetPath: string) => readAuditTarget(targetPath))
+  ipcMain.handle('audit:choose-target', () => chooseAuditTarget())
+  ipcMain.handle('audit:apply', (_e, id: string, decisions: AuditDecision[], expectedUpdatedAt: string) => applyAuditFromApp(id, decisions, expectedUpdatedAt))
   ipcMain.handle('sessions:list', () => listSessions())
   ipcMain.handle('mcp:info', async () => ({ serverPath, nodeBin: await nodeBinPath() }))
   ipcMain.handle('projects:get', (_e, id: string) => loadBundle(id))
@@ -218,7 +231,7 @@ app.whenReady().then(() => {
   })
 
   // Live updates: the MCP server writes files; we push a change signal to the UI.
-  const watcher = chokidar.watch([PROJECTS_DIR, path.join(DATA_DIR, 'sessions')], {
+  const watcher = chokidar.watch([PROJECTS_DIR, path.join(DATA_DIR, 'sessions'), path.join(DATA_DIR, 'agent-audits')], {
     ignoreInitial: true,
     ignored: (p) => /\.tmp$|\.lock$|\.bak$|\.DS_Store$|\.corrupt-/.test(p),
     awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 40 },
@@ -240,9 +253,9 @@ app.whenReady().then(() => {
     if (agentsMdTimer) clearTimeout(agentsMdTimer)
     agentsMdTimer = setTimeout(() => syncAllAgentsMd(listBundles()), 2000)
   }
-  watcher.on('all', () => {
+  watcher.on('all', (_event, changedPath) => {
     notify()
-    scheduleAgentsMdSync()
+    if (changedPath === PROJECTS_DIR || changedPath.startsWith(PROJECTS_DIR + path.sep)) scheduleAgentsMdSync()
   })
   watcher.on('error', (err) => console.error('[specdrive] watcher error:', err))
   // Seed the notifier's snapshots silently so the first real change after
