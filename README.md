@@ -28,7 +28,7 @@ SpecDrive is the house where any coding agent comes to read the rules and drive 
 
 ## Personalize your agent
 
-Open **Personnaliser mon agent** in the sidebar, choose your personal or project `CLAUDE.md` / `AGENTS.md`, and copy the audit prompt into your MCP-capable agent. It inventories local Claude Code and Codex conversation logs, examines requests and follow-up corrections, and sends evidence-backed suggestions to the Studio. You can inspect exact quotes, edit individual proposed rules, compare the Markdown, then apply only the selected changes. The original is backed up; an externally changed target or overlapping replacements block application.
+Open **Personnaliser mon agent** in the sidebar and copy the audit prompt into your MCP-capable agent. Your `CLAUDE.md` / `AGENTS.md` occupies the full-height document pane; one side pane connects recurring feedback to proposed instructions. Select a finding, inspect its quoted evidence, edit the suggested text directly in the document, then retain or ignore it. The single main action applies the retained changes. File selection, past analyses, source coverage and timing details are grouped under **…**. The original is backed up; an externally changed target or overlapping replacements block application.
 
 The agent provides the interpretation; SpecDrive checks quoted text and message references against captured conversation snapshots. Outcomes distinguish a delivery **declared by the agent**, **validated by the user**, and **unknown**. Times are calculated from source timestamps and include human pauses; they are not active work time or a model quality benchmark. The Studio labels captured conversations separately from analyzed requests.
 

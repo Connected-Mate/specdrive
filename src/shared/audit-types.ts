@@ -76,6 +76,7 @@ export interface AuditPreview {
 export interface AgentAuditApi {
   list(): Promise<AuditReport[]>
   targets(): Promise<AuditTarget[]>
+  readTarget(targetPath: string): Promise<{ path: string; content: string; exists: boolean }>
   chooseTarget(): Promise<AuditTarget | null>
   apply(id: string, decisions: AuditDecision[], expectedUpdatedAt: string): Promise<AuditReport>
 }

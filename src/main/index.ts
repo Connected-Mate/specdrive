@@ -19,7 +19,7 @@ import { syncAllAgentsMd } from './agentsMd'
 import { initUpdater, checkForUpdatesInteractive } from './updater'
 import { checkForNotifications } from './notify'
 import type { AgentId, OwnerComment } from '../shared/types'
-import { listAudits, auditTargets, chooseAuditTarget, applyAuditFromApp } from './agentAudit'
+import { listAudits, auditTargets, chooseAuditTarget, applyAuditFromApp, readAuditTarget } from './agentAudit'
 import type { AuditDecision } from '../shared/audit-types'
 
 const isDev = !app.isPackaged
@@ -185,6 +185,7 @@ app.whenReady().then(() => {
   ipcMain.handle('projects:list', () => listBundles())
   ipcMain.handle('audit:list', () => listAudits())
   ipcMain.handle('audit:targets', () => auditTargets())
+  ipcMain.handle('audit:read-target', (_e, targetPath: string) => readAuditTarget(targetPath))
   ipcMain.handle('audit:choose-target', () => chooseAuditTarget())
   ipcMain.handle('audit:apply', (_e, id: string, decisions: AuditDecision[], expectedUpdatedAt: string) => applyAuditFromApp(id, decisions, expectedUpdatedAt))
   ipcMain.handle('sessions:list', () => listSessions())

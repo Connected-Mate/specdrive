@@ -9,6 +9,7 @@ import { previewAudit } from './audit-preview.mjs'
 const MAX_TARGET_BYTES = 1024 * 1024
 const MAX_REPORT_BYTES = 8 * 1024 * 1024
 const MAX_HISTORY_BYTES = 20 * 1024 * 1024
+const APPLICATION_FILE = 'application.json'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const SESSION_ID = /^[0-9a-f]{32}$/
 const hash = value => createHash('sha256').update(value).digest('hex')
@@ -47,9 +48,13 @@ async function readBounded(file, max) {
     return { text: new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, used)), stat }
   } finally { await handle.close() }
 }
-async function atomicJSON(file, data, max = MAX_REPORT_BYTES) {
+function encodeJSON(data, max = MAX_REPORT_BYTES) {
   const text = JSON.stringify(data, null, 2) + '\n'
   if (Buffer.byteLength(text) > max) fail('Audit data exceeds the permitted size.')
+  return text
+}
+async function atomicJSON(file, data, max = MAX_REPORT_BYTES) {
+  const text = encodeJSON(data, max)
   const temporary = `${file}.${randomUUID()}.tmp`
   let handle
   try {
@@ -60,10 +65,92 @@ async function atomicJSON(file, data, max = MAX_REPORT_BYTES) {
     await fs.rename(temporary, file)
   } finally { await handle?.close(); await fs.unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error }) }
 }
-async function loadReport(directory, id) {
-  const report = JSON.parse((await readBounded(path.join(directory, 'report.json'), MAX_REPORT_BYTES)).text)
-  if (report.id !== id || !Array.isArray(report.sessions) || typeof report.original !== 'string' || report.originalHash !== hash(report.original)) fail('Invalid audit report.')
+function validateReport(report, id) {
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+  const text = (value, max = 10_000) => typeof value === 'string' && value.length <= max
+  const date = value => text(value, 100) && Number.isFinite(Date.parse(value))
+  const count = value => Number.isSafeInteger(value) && value >= 0
+  const list = (value, max, check) => Array.isArray(value) && value.length <= max && value.every(check)
+  const optional = (value, check) => value === undefined || check(value)
+  const messageId = value => text(value, 150) && value.length > 0
+  const findingId = value => text(value, 80) && /^[a-zA-Z0-9_-]+$/.test(value)
+  const target = value => text(value, 4096) && path.isAbsolute(value) && ['CLAUDE.md', 'AGENTS.md'].includes(path.basename(value))
+  const valid = object(report) && report.id === id && UUID.test(id) && target(report.targetPath)
+    && date(report.createdAt) && date(report.updatedAt) && ['collecting', 'ready', 'applied'].includes(report.status)
+    && text(report.original, MAX_TARGET_BYTES) && Buffer.byteLength(report.original) <= MAX_TARGET_BYTES
+    && report.originalHash === hash(report.original) && typeof report.originalExists === 'boolean' && text(report.scope)
+    && list(report.sessions, 500, item => object(item) && SESSION_ID.test(item.id) && ['claude', 'codex'].includes(item.provider)
+      && text(item.title, 1000) && count(item.messageCount) && item.messageCount <= 10_000
+      && optional(item.projectPath, value => text(value, 4096)) && optional(item.startedAt, date) && optional(item.updatedAt, date))
+    && list(report.coverage, 2, item => object(item) && ['claude', 'codex'].includes(item.provider) && typeof item.available === 'boolean'
+      && count(item.discovered) && count(item.included) && text(item.note))
+    && list(report.limitations, MAX_REPORT_BYTES, value => text(value, 2000))
+  if (!valid) fail('Invalid audit report.')
+  const sessions = new Set(report.sessions.map(item => item.id))
+  if (sessions.size !== report.sessions.length) fail('Invalid audit report: duplicate sessions.')
+  const evidence = item => object(item) && sessions.has(item.sessionId) && messageId(item.messageId) && text(item.excerpt, 4000) && item.excerpt.trim().length > 0
+  if (!list(report.findings, 100, item => object(item) && findingId(item.id) && text(item.title, 200) && text(item.summary, 5000)
+    && ['preference', 'workflow', 'context', 'tooling'].includes(item.category) && ['low', 'medium', 'high'].includes(item.confidence)
+    && list(item.evidence, 20, evidence) && item.evidence.length > 0
+    && optional(item.proposal, proposal => object(proposal) && text(proposal.before, MAX_TARGET_BYTES) && text(proposal.after, 100_000) && text(proposal.rationale, 5000)))) fail('Invalid audit findings.')
+  const findings = new Set(report.findings.map(item => item.id))
+  if (findings.size !== report.findings.length) fail('Invalid audit report: duplicate findings.')
+  if (!list(report.observations, 1000, item => object(item) && sessions.has(item.sessionId) && messageId(item.requestMessageId)
+    && optional(item.completionMessageId, messageId) && optional(item.validationMessageId, messageId)
+    && list(item.correctionMessageIds, 100, messageId) && ['validated', 'declared', 'unknown'].includes(item.outcome)
+    && optional(item.responseTurns, count) && optional(item.elapsedMs, count) && optional(item.validatedElapsedMs, count))) fail('Invalid audit observations.')
+  if (!optional(report.appliedAt, date) || !optional(report.backupPath, value => value === `${report.targetPath}.specdrive-${id}.bak`)
+    || !optional(report.appliedFindingIds, value => list(value, 100, item => findings.has(item)))
+    || !optional(report.appliedDecisions, value => list(value, 100, item => object(item) && findings.has(item.findingId) && text(item.after, 100_000)))
+    || (report.status === 'applied' && (!date(report.appliedAt) || !Array.isArray(report.appliedFindingIds)))) fail('Invalid audit application record.')
   return report
+}
+async function loadReport(directory, id) {
+  return validateReport(JSON.parse((await readBounded(path.join(directory, 'report.json'), MAX_REPORT_BYTES)).text), id)
+}
+
+async function readLock(file) {
+  const owner = JSON.parse((await readBounded(file, 1024)).text)
+  if (!Number.isSafeInteger(owner?.pid) || owner.pid <= 0 || !UUID.test(owner.nonce)) fail('Invalid audit lock; inspect the lock file before removing it.')
+  return owner
+}
+const processAlive = pid => {
+  try { process.kill(pid, 0); return true } catch (error) { if (error.code === 'ESRCH') return false; if (error.code === 'EPERM') return true; throw error }
+}
+async function releaseLock(file, owner) {
+  try {
+    const current = await readLock(file)
+    if (current.pid === owner.pid && current.nonce === owner.nonce) await fs.unlink(file)
+  } catch (error) { if (error.code !== 'ENOENT') throw error }
+}
+/** Publish a complete owner record atomically. Reaping is serialized per dead
+ * owner's nonce, so two reapers cannot unlink a newly acquired live lock. */
+async function acquireLock(file, busyMessage, depth = 0) {
+  if (depth > 8) fail('Too many interrupted lock recoveries; inspect the audit store before retrying.')
+  const owner = { pid: process.pid, nonce: randomUUID() }
+  const candidate = `${file}.${owner.nonce}.tmp`
+  let handle
+  try {
+    handle = await fs.open(candidate, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
+    await handle.writeFile(JSON.stringify(owner), 'utf8'); await handle.sync(); await handle.close(); handle = undefined
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try { await fs.link(candidate, file); return owner }
+      catch (error) { if (error.code !== 'EEXIST') throw error }
+      let stale
+      try { stale = await readLock(file) } catch (error) { if (error.code === 'ENOENT') continue; throw error }
+      if (processAlive(stale.pid)) fail(busyMessage)
+      const reaperPath = `${file}.reap-${stale.nonce}.lock`
+      const reaper = await acquireLock(reaperPath, busyMessage, depth + 1)
+      try {
+        const current = await readLock(file).catch(error => { if (error.code === 'ENOENT') return undefined; throw error })
+        if (current?.nonce === stale.nonce && current.pid === stale.pid && !processAlive(current.pid)) await fs.unlink(file)
+      } finally { await releaseLock(reaperPath, reaper) }
+    }
+    fail(busyMessage)
+  } finally {
+    await handle?.close()
+    await fs.unlink(candidate).catch(error => { if (error.code !== 'ENOENT') throw error })
+  }
 }
 
 /** Targets must be explicit instruction files. Resolve the parent once and keep
@@ -91,21 +178,62 @@ async function snapshot(targetPath) {
     return { original: '', originalHash: hash(''), originalExists: false, mode: 0o600 }
   }
 }
+export async function readAuditTarget(targetPath) {
+  const canonical = await canonicalTarget(targetPath)
+  const current = await snapshot(canonical)
+  return { path: canonical, content: current.original, exists: current.originalExists }
+}
 async function verifySnapshot(report) {
   if (await canonicalTarget(report.targetPath) !== report.targetPath) fail('The target directory has changed; start a new audit.')
   const current = await snapshot(report.targetPath)
   if (current.originalExists !== report.originalExists || current.originalHash !== report.originalHash) fail('The instruction file changed since this audit. Start a new audit before applying proposals.')
   return current
 }
+async function recoverApplication(directory, report) {
+  const journalPath = path.join(directory, APPLICATION_FILE)
+  let pending
+  try { pending = JSON.parse((await readBounded(journalPath, MAX_REPORT_BYTES * 2)).text) }
+  catch (error) { if (error.code === 'ENOENT') return report; throw error }
+  const applied = validateReport(pending?.report, report.id)
+  const expectedTemporary = path.join(path.dirname(report.targetPath), `.specdrive-${pending.nonce}.tmp`)
+  if (pending.version !== 1 || !UUID.test(pending.nonce) || applied.status !== 'applied' || !Array.isArray(applied.appliedDecisions)
+    || applied.targetPath !== report.targetPath || applied.originalHash !== report.originalHash || applied.originalExists !== report.originalExists
+    || pending.temporaryPath !== expectedTemporary || !/^[a-f0-9]{64}$/.test(pending.resultHash)) fail('Invalid interrupted application journal.')
+  const preview = previewAudit(applied.original, applied.findings, applied.appliedDecisions)
+  if (preview.conflicts.length || hash(preview.content) !== pending.resultHash) fail('Invalid interrupted application content.')
+  if (report.status === 'applied' && report.updatedAt === applied.updatedAt) {
+    await fs.unlink(journalPath)
+    return report
+  }
+  if (pending.reviewedUpdatedAt !== report.updatedAt) fail('The interrupted application no longer matches this audit revision.')
+  const targetLock = path.join(await storeRoot(), `.target-${hash(report.targetPath)}.lock`)
+  const owner = await acquireLock(targetLock, 'This instruction file is already being updated. Retry after the current operation completes.')
+  try {
+    if (await canonicalTarget(report.targetPath) !== report.targetPath) fail('The target directory changed during an interrupted application.')
+    const current = await snapshot(report.targetPath)
+    if (current.originalExists && current.originalHash === pending.resultHash) {
+      try { await atomicJSON(path.join(directory, 'report.json'), applied) }
+      catch (error) { fail(`The instruction file was updated, but the audit record could not be saved. The recovery journal is preserved; retry after resolving the storage error. ${error.message}`) }
+      await fs.unlink(journalPath)
+      return applied
+    }
+    if (current.originalExists !== report.originalExists || current.originalHash !== report.originalHash) {
+      fail('An interrupted application cannot be reconciled because the instruction file changed again. Keep the recovery journal and backup, and start a new audit of the current file.')
+    }
+    // Nothing was committed. Keep the original backup, discard only this
+    // transaction's staged file and allow an explicit apply to be retried.
+    await fs.unlink(pending.temporaryPath).catch(error => { if (error.code !== 'ENOENT') throw error })
+    await fs.unlink(journalPath)
+    return report
+  } finally { await releaseLock(targetLock, owner) }
+}
 async function withAuditLock(id, action) {
   const directory = await auditDirectory(id)
   const lock = path.join(directory, '.write.lock')
-  let handle
+  const owner = await acquireLock(lock, 'This audit is already being updated. Retry after the current operation completes.')
   try {
-    try { handle = await fs.open(lock, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600) }
-    catch (error) { if (error.code === 'EEXIST') fail('This audit is already being updated. Retry after the current operation completes.'); throw error }
-    return await action(directory, await loadReport(directory, id))
-  } finally { if (handle) { await handle.close(); await fs.unlink(lock) } }
+    return await action(directory, await recoverApplication(directory, await loadReport(directory, id)))
+  } finally { await releaseLock(lock, owner) }
 }
 
 /** Start a local, bounded snapshot. This never edits the target instruction file. */
@@ -150,7 +278,13 @@ export async function listAudits() {
   }
   return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
-export async function getAudit(id) { return loadReport(await auditDirectory(id), id) }
+export async function getAudit(id) {
+  const directory = await auditDirectory(id)
+  const report = await loadReport(directory, id)
+  try { await fs.lstat(path.join(directory, APPLICATION_FILE)) }
+  catch (error) { if (error.code === 'ENOENT') return report; throw error }
+  return withAuditLock(id, (_directory, recovered) => recovered)
+}
 export async function readAuditSession(id, sessionId) {
   if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) fail('Invalid session ID.')
   const directory = await auditDirectory(id)
@@ -260,41 +394,53 @@ export async function applyAudit(id, decisions, expectedUpdatedAt) {
     if (generated(preview.content)) fail('A proposal cannot turn an instruction file into a generated SpecDrive export.')
     const root = await storeRoot()
     const targetLock = path.join(root, `.target-${hash(report.targetPath)}.lock`)
-    let lockHandle
+    let lockOwner
     let temporary
     let temporaryHandle
+    let committed = false
     try {
-      try { lockHandle = await fs.open(targetLock, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600) }
-      catch (error) { if (error.code === 'EEXIST') fail('This instruction file is already being updated. Retry after the current operation completes.'); throw error }
+      lockOwner = await acquireLock(targetLock, 'This instruction file is already being updated. Retry after the current operation completes.')
       const current = await verifySnapshot(report)
-      let backupPath
+      const backupPath = current.originalExists ? `${report.targetPath}.specdrive-${id}.bak` : undefined
+      const nonce = randomUUID()
+      temporary = path.join(path.dirname(report.targetPath), `.specdrive-${nonce}.tmp`)
+      const appliedAt = nextTimestamp(report.updatedAt)
+      const applied = { ...report, status: 'applied', appliedAt, updatedAt: appliedAt,
+        ...(backupPath ? { backupPath } : {}), appliedFindingIds: decisions.map(decision => decision.findingId),
+        appliedDecisions: decisions.map(decision => ({ findingId: decision.findingId, after: decision.after })) }
+      // Preflight the final report and persist enough information to reconcile
+      // a crash after the target rename but before the report is committed.
+      encodeJSON(applied)
+      await atomicJSON(path.join(directory, APPLICATION_FILE), { version: 1, nonce, reviewedUpdatedAt: report.updatedAt,
+        resultHash: hash(preview.content), temporaryPath: temporary, report: applied }, MAX_REPORT_BYTES * 2)
       if (current.originalExists) {
-        backupPath = `${report.targetPath}.specdrive-${id}.bak`
         let backup
         try { backup = await fs.open(backupPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, current.mode) }
-        catch (error) { if (error.code === 'EEXIST') fail('A backup already exists for this audit, possibly from an earlier attempt. Keep it and start a new audit; this attempt has not changed the instruction file.'); throw error }
-        try { await backup.writeFile(current.original, 'utf8'); await backup.sync() } finally { await backup.close() }
+        catch (error) {
+          if (error.code !== 'EEXIST') throw error
+          const existing = await readBounded(backupPath, MAX_TARGET_BYTES)
+          if (existing.stat.nlink !== 1 || hash(existing.text) !== report.originalHash) fail('A different backup already exists for this audit. Keep it and start a new audit; this attempt has not changed the instruction file.')
+        }
+        if (backup) { try { await backup.writeFile(current.original, 'utf8'); await backup.sync() } finally { await backup.close() } }
       }
-      temporary = path.join(path.dirname(report.targetPath), `.specdrive-${randomUUID()}.tmp`)
       temporaryHandle = await fs.open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, current.mode)
       await temporaryHandle.writeFile(preview.content, 'utf8')
       await temporaryHandle.sync()
       await temporaryHandle.close(); temporaryHandle = undefined
       await verifySnapshot(report)
       await fs.rename(temporary, report.targetPath)
+      committed = true
       temporary = undefined
-      report.status = 'applied'
-      report.appliedAt = nextTimestamp(report.updatedAt)
-      report.updatedAt = report.appliedAt
-      if (backupPath) report.backupPath = backupPath
-      report.appliedFindingIds = decisions.map(decision => decision.findingId)
-      report.appliedDecisions = decisions.map(decision => ({ findingId: decision.findingId, after: decision.after }))
-      await atomicJSON(path.join(directory, 'report.json'), report)
-      return report
+      await atomicJSON(path.join(directory, 'report.json'), applied)
+      await fs.unlink(path.join(directory, APPLICATION_FILE))
+      return applied
+    } catch (error) {
+      if (committed) fail(`The instruction file was updated, but the audit record could not be finalized. The recovery journal is preserved; refresh after resolving the storage error. ${error.message}`)
+      throw error
     } finally {
       await temporaryHandle?.close()
       if (temporary) await fs.unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error })
-      if (lockHandle) { await lockHandle.close(); await fs.unlink(targetLock) }
+      if (lockOwner) await releaseLock(targetLock, lockOwner)
     }
   })
 }

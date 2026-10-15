@@ -3,10 +3,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import type { AuditDecision, AuditReport, AuditTarget } from '../shared/audit-types'
-import { listAudits, getAudit, applyAudit } from '../shared/agent-audit.mjs'
+import { listAudits, getAudit, applyAudit, readAuditTarget } from '../shared/agent-audit.mjs'
 import { listBundles } from './store'
 
-export { listAudits }
+export { listAudits, readAuditTarget }
 
 const instructionName = (target: string): boolean => ['CLAUDE.md', 'AGENTS.md'].includes(path.basename(target))
 

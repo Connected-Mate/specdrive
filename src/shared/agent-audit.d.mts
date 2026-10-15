@@ -1,5 +1,6 @@
 import type { AuditDecision, AuditFinding, AuditObservation, AuditReport, HistoryMessage, HistoryProvider, HistorySession } from './audit-types'
 export function startAudit(options: { targetPath: string; projectPath?: string; limit?: number; providers?: HistoryProvider[] }): Promise<AuditReport>
+export function readAuditTarget(targetPath: string): Promise<{ path: string; content: string; exists: boolean }>
 export function listAudits(): Promise<AuditReport[]>
 export function getAudit(id: string): Promise<AuditReport>
 export function readAuditSession(id: string, sessionId: string): Promise<{ session: HistorySession; messages: HistoryMessage[] }>
