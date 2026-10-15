@@ -8,6 +8,7 @@ import { useAgents, useProjects } from './lib/useLive'
 import { SidebarIcon } from './components/Icons'
 import { EasterEgg } from './components/scene/EasterEgg'
 import { SearchOverlay } from './components/SearchOverlay'
+import { AgentStudio } from './screens/AgentStudio'
 
 const SIDE_KEY = 'specdrive-sidebar'
 const RAIL_KEY = 'specdrive-rail'
@@ -19,6 +20,7 @@ export default function App(): React.JSX.Element {
   const [openId, setOpenId] = useState<string | null>(null)
   const [eggOn, setEggOn] = useState(false)
   const [searchOn, setSearchOn] = useState(false)
+  const [studioOn, setStudioOn] = useState(false)
 
   // Fullscreen hides the traffic lights — collapse the space kept for them.
   useEffect(() => {
@@ -103,7 +105,11 @@ export default function App(): React.JSX.Element {
 
   // Automated visual checks can force a project open.
   useEffect(() => {
-    const h = (e: Event): void => setOpenId((e as CustomEvent<string>).detail)
+    const h = (e: Event): void => {
+      const id = (e as CustomEvent<string>).detail
+      if (id === '__agent-studio__') setStudioOn(true)
+      else { setOpenId(id); setStudioOn(false) }
+    }
     window.addEventListener('specdrive:open-project', h)
     return () => window.removeEventListener('specdrive:open-project', h)
   }, [])
@@ -112,17 +118,21 @@ export default function App(): React.JSX.Element {
 
   return (
     <ToastProvider>
-      <div className={`shell${sideOpen ? '' : ' side-closed'}${railOpen ? '' : ' rail-closed'}`}>
+      <div className={`shell${sideOpen ? '' : ' side-closed'}${railOpen && !studioOn ? '' : ' rail-closed'}${studioOn ? ' studio-shell' : ''}`}>
         <Sidebar
           projects={projects}
           agents={agents}
-          openId={open ? open.project.id : null}
-          onSelect={setOpenId}
+          openId={!studioOn && open ? open.project.id : null}
+          onSelect={(id) => { setOpenId(id); setStudioOn(false) }}
+          studioOn={studioOn}
+          onStudio={() => setStudioOn(true)}
           connect={connect}
           onEgg={() => setEggOn(true)}
           onToggleSide={toggleSide}
         />
-        {open ? (
+        {studioOn ? (
+          <AgentStudio projectPath={open?.project.codebasePath} />
+        ) : open ? (
           <Project key={open.project.id} bundle={open} />
         ) : (
           <main className="content">
@@ -134,7 +144,7 @@ export default function App(): React.JSX.Element {
             <Welcome />
           </main>
         )}
-        <GuideRail bundle={open ?? null} open={railOpen} onToggle={toggleRail} />
+        {!studioOn && <GuideRail bundle={open ?? null} open={railOpen} onToggle={toggleRail} />}
         {eggOn && <EasterEgg onClose={() => setEggOn(false)} />}
         {searchOn && (
           <SearchOverlay
@@ -142,6 +152,7 @@ export default function App(): React.JSX.Element {
             onClose={() => setSearchOn(false)}
             onJump={(id) => {
               setOpenId(id)
+              setStudioOn(false)
               setSearchOn(false)
             }}
           />

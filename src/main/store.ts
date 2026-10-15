@@ -6,7 +6,7 @@ import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import type { ActivityEntry, OwnerComment, ProjectBundle, Project, Task } from '../shared/types'
 
-export const DATA_DIR = path.join(os.homedir(), '.specdrive')
+export const DATA_DIR = process.env.SPECDRIVE_DATA_DIR || path.join(os.homedir(), '.specdrive')
 export const PROJECTS_DIR = path.join(DATA_DIR, 'projects')
 
 export function ensureDataDirs(): void {

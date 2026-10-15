@@ -16,7 +16,7 @@
     "dist": "electron-vite build && npm run build:mcp && electron-builder --mac",
     "release": "electron-vite build && npm run build:mcp && electron-builder --mac --publish always",
     "install:app": "zsh scripts/install-app.sh",
-    "test": "node --test test/mcp.test.mjs"
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

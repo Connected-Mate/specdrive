@@ -59,7 +59,9 @@ export function Sidebar({
   onSelect,
   connect,
   onEgg,
-  onToggleSide
+  onToggleSide,
+  studioOn,
+  onStudio
 }: {
   projects: ProjectBundle[]
   agents: DetectedAgent[]
@@ -68,6 +70,8 @@ export function Sidebar({
   connect: (id: DetectedAgent['id']) => Promise<void>
   onEgg: () => void
   onToggleSide: () => void
+  studioOn: boolean
+  onStudio: () => void
 }): React.JSX.Element {
   const toast = useToast()
   const [busy, setBusy] = useState<string | null>(null)
@@ -134,6 +138,15 @@ export function Sidebar({
             <span className="brand-cursor-pill">agents</span>
           </span>
         </span>
+      </button>
+
+      <button className={`side-studio${studioOn ? ' active' : ''}`} onClick={onStudio} aria-current={studioOn ? 'page' : undefined} data-testid="agent-studio">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 7h16M4 17h16M8 4v6m8 4v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <circle cx="8" cy="7" r="2" fill="var(--paper)" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="16" cy="17" r="2" fill="var(--paper)" stroke="currentColor" strokeWidth="1.5" />
+        </svg>
+        <span>Personnaliser mon agent</span>
       </button>
 
       <div className="sidebar-label">Projects</div>
